@@ -1,0 +1,126 @@
+# ----------------------------
+# Flutter / Dart
+# ----------------------------
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Flutter generated
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+pubspec.lock
+
+# If this project is an app, usually keep pubspec.lock.
+# If you want to track it, remove the line above.
+
+# ----------------------------
+# Android / Android Studio
+# ----------------------------
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+
+.gradle/
+.idea/
+*.iml
+
+# Android build outputs
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# ----------------------------
+# iOS / macOS
+# ----------------------------
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Pods/
+**/ios/.symlinks/
+**/macos/Pods/
+**/macos/.symlinks/
+
+# CocoaPods
+Podfile.lock
+
+# ----------------------------
+# Windows / Linux
+# ----------------------------
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# ----------------------------
+# Logs / temp
+# ----------------------------
+*.log
+*.tmp
+*.temp
+*.swp
+*.lock
+
+# ----------------------------
+# Environment / Secrets
+# ----------------------------
+.env
+.env.*
+*.env
+secret.dart
+lib/config/api_keys.dart
+lib/config/secrets.dart
+
+# Firebase / service config copies if needed
+google-services.json
+GoogleService-Info.plist
+
+# ----------------------------
+# Uploaded files / local assets
+# ----------------------------
+uploads/
+temp/
+cache/
+
+# ----------------------------
+# Python backend / AI server
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.venv/
+venv/
+env/
+ENV/
+
+# Python build / packaging
+dist/
+#build/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# SQLite / local DB
+*.sqlite3
+*.db
+
+# ----------------------------
+# OS files
+# ----------------------------
+.DS_Store
+Thumbs.db
+desktop.ini

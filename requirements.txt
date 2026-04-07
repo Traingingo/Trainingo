@@ -1,0 +1,17 @@
+flask==3.0.3
+flask-cors==5.0.0
+python-dotenv==1.0.1
+
+openai==1.51.0
+
+pymupdf==1.24.10
+python-pptx==1.0.2
+pypdf==5.0.1
+
+langchain==0.3.3
+tiktoken==0.8.0
+
+sqlalchemy==2.0.35
+
+requests==2.32.3
+gunicorn==23.0.0
