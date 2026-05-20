@@ -37,3 +37,13 @@ lib/
  ┗ routes/
    ┗ app_routes.dart
 ```
+
+---
+## requirements.txt
+
+로컬 터미널에서 아래 코드 실행
+```bash
+flutter pub get
+```
+
+---
