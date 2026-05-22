@@ -25,6 +25,8 @@ class QuestionProvider extends ChangeNotifier {
     required String subject,
     required String difficulty,
     required String type,
+    String levelTitle = "",
+    String levelDescription = "",
   }) async {
     isLoading = true;
     currentIndex = 0;
@@ -36,6 +38,8 @@ class QuestionProvider extends ChangeNotifier {
       subject: subject,
       difficulty: difficulty,
       type: type,
+      levelTitle: levelTitle,
+      levelDescription: levelDescription,
     );
 
     isLoading = false;

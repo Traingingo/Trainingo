@@ -1,38 +1,36 @@
 import 'package:flutter/material.dart';
 
 import '../models/lesson_model.dart';
+import '../services/question_service.dart';
 
 class LearningProvider extends ChangeNotifier {
-  List<LessonModel> lessons = [
-    LessonModel(
-      id: 1,
-      title: 'Level 1. 기초 개념',
-      description: '과목의 기본 개념을 학습합니다.',
-      level: 1,
-      isLocked: false,
-      isCompleted: false,
-    ),
-    LessonModel(
-      id: 2,
-      title: 'Level 2. 핵심 문법',
-      description: '핵심 문법과 기본 문제를 풉니다.',
-      level: 2,
-      isLocked: true,
-      isCompleted: false,
-    ),
-    LessonModel(
-      id: 3,
-      title: 'Level 3. 응용 문제',
-      description: '응용 문제를 통해 실력을 확인합니다.',
-      level: 3,
-      isLocked: true,
-      isCompleted: false,
-    ),
-  ];
+  final QuestionService _questionService = QuestionService();
+
+  List<LessonModel> lessons = [];
+  String currentSubject = "";
+  bool isLoading = false;
 
   double get progress {
+    if (lessons.isEmpty) return 0.0;
     final completed = lessons.where((lesson) => lesson.isCompleted).length;
     return completed / lessons.length;
+  }
+
+  Future<void> generateCurriculum(String subject) async {
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      final newLessons = await _questionService.generateCurriculum(subject: subject);
+      lessons = newLessons;
+      currentSubject = subject;
+    } catch (e) {
+      print("❌ 커리큘럼 생성 실패: $e");
+      // 예외 발생 시 더미 데이터를 설정하지 않고 그대로 에러를 상위로 던지거나 알립니다.
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
 
   void completeLesson(int lessonId) {
@@ -48,6 +46,7 @@ class LearningProvider extends ChangeNotifier {
         );
       }
 
+      // 다음 레벨 해제
       if (lesson.id == lessonId + 1) {
         return LessonModel(
           id: lesson.id,
