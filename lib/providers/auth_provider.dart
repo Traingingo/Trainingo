@@ -34,8 +34,10 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       user = null;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_currentUserKey);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_currentUserKey);
+      } catch (_) {}
       debugPrint('저장된 로그인 상태 복원 실패: $e');
     } finally {
       isInitialized = true;
@@ -87,15 +89,23 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _persistUser(UserModel? currentUser) async {
     if (currentUser == null) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _currentUserKey,
-      jsonEncode(currentUser.toJson()),
-    );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _currentUserKey,
+        jsonEncode(currentUser.toJson()),
+      );
+    } catch (e) {
+      debugPrint('로그인 상태 저장 실패: $e');
+    }
   }
 
   Future<void> _clearPersistedUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_currentUserKey);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_currentUserKey);
+    } catch (e) {
+      debugPrint('로그인 상태 삭제 실패: $e');
+    }
   }
 }
