@@ -1,0 +1,54 @@
+.
+├── README.md
+├── analysis_options.yaml
+├── lib
+│   ├── core
+│   │   ├── constants
+│   │   │   └── app_constants.dart
+│   │   ├── theme
+│   │   │   └── app_theme.dart
+│   │   └── utils
+│   │       └── snackbar_util.dart
+│   ├── main.dart
+│   ├── models
+│   │   ├── lesson_model.dart
+│   │   ├── question_model.dart
+│   │   ├── study_material_model.dart
+│   │   └── user_model.dart
+│   ├── providers
+│   │   ├── auth_provider.dart
+│   │   ├── learning_provider.dart
+│   │   └── question_provider.dart
+│   ├── routes
+│   │   └── app_routes.dart
+│   ├── screens
+│   │   ├── auth
+│   │   │   └── login_screen.dart
+│   │   ├── home
+│   │   │   └── home_screen.dart
+│   │   ├── learning
+│   │   │   ├── lesson_list_screen.dart
+│   │   │   └── question_screen.dart
+│   │   ├── materials
+│   │   │   └── material_upload_screen.dart
+│   │   └── review
+│   │       └── review_screen.dart
+│   ├── services
+│   │   ├── api_service.dart
+│   │   ├── auth_service.dart
+│   │   ├── material_service.dart
+│   │   └── question_service.dart
+│   └── widgets
+│       ├── common
+│       │   └── custom_button.dart
+│       ├── progress
+│       │   └── progress_bar.dart
+│       └── question
+│           └── question_card.dart
+├── project_structure.txt
+├── pubspec.yaml
+├── requirements.txt
+└── test
+    └── widget_test.dart
+
+21 directories, 31 files
