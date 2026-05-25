@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/learning_provider.dart';
 import '../../providers/question_provider.dart';
 import '../../widgets/question/question_card.dart';
@@ -156,14 +157,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            // 하트/생명 개수 표시 (데코레이션)
+            // 하트/생명 개수 동적 표시
             Row(
-              children: const [
-                Icon(Icons.favorite, color: Colors.red, size: 24),
-                SizedBox(width: 4),
+              children: [
+                const Icon(Icons.favorite, color: Colors.red, size: 24),
+                const SizedBox(width: 4),
                 Text(
-                  '3',
-                  style: TextStyle(
+                  '${questionProvider.hearts}',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
                     color: Color(0xFF3C3C3C),
@@ -273,10 +274,38 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       onPressed: questionProvider.selectedAnswer == null
                           ? null
                           : () {
+                              final user = context.read<AuthProvider>().user;
+                              final userId = user?.id ?? 1;
+                              final subject = learningProvider.currentSubject;
+                              
                               setState(() {
-                                _isAnswerCorrect = questionProvider.checkAnswer();
+                                _isAnswerCorrect = questionProvider.checkAnswer(
+                                  userId: userId,
+                                  subject: subject,
+                                );
                                 _isChecked = true;
                               });
+
+                              // 하트 소진 여부 감지
+                              if (questionProvider.hearts <= 0) {
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('💔 하트 소진!', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    content: const Text('하트를 모두 소진했습니다. 아쉽지만 홈으로 돌아가서 다시 시도해 주세요!'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.pop(context); // 다이얼로그 닫기
+                                          Navigator.pop(context); // 문제 화면 닫기 (단원 목록으로 복귀)
+                                        },
+                                        child: const Text('확인', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
                             },
                     )
                   else
@@ -287,15 +316,21 @@ class _QuestionScreenState extends State<QuestionScreen> {
                           : const Color(0xFFFF5252),
                       shadowColor: _isAnswerCorrect
                           ? const Color(0xFF46A302)
-                          : const Color(0xFFD32F2F),
+                          : const Color(0xFFFF5252),
                       onPressed: () {
                         if (questionProvider.isLastQuestion) {
+                          // 축하 사운드 재생
+                          questionProvider.playVictorySound();
+                          
                           // 코스 완료 처리
                           context
                               .read<LearningProvider>()
                               .completeLesson(lessonId);
                           Navigator.pop(context);
                         } else {
+                          // 하트가 이미 0 이하라면 진행 중단
+                          if (questionProvider.hearts <= 0) return;
+
                           setState(() {
                             _isChecked = false;
                             _isAnswerCorrect = false;

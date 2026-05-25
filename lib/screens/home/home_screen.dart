@@ -17,6 +17,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _subjectController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = context.read<AuthProvider>().user;
+      if (user != null) {
+        context.read<LearningProvider>().fetchUserSessions(user.id);
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _subjectController.dispose();
     super.dispose();
@@ -34,16 +45,22 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    final provider = context.read<LearningProvider>();
-    await provider.generateCurriculum(topic);
+    final user = context.read<AuthProvider>().user;
+    if (user == null) return;
 
-    if (context.mounted) {
-      if (provider.lessons.isNotEmpty) {
-        Navigator.pushNamed(context, AppRoutes.lessons);
-      } else {
+    final provider = context.read<LearningProvider>();
+    try {
+      await provider.generateCurriculum(topic, user.id);
+      if (context.mounted) {
+        if (provider.lessons.isNotEmpty) {
+          Navigator.pushNamed(context, AppRoutes.lessons);
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('커리큘럼을 생성하는 데 실패했습니다. 다시 시도해 주세요.'),
+          SnackBar(
+            content: Text(e.toString().replaceAll("Exception: ", "")),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -266,97 +283,113 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
 
             // 3. 현재 학습 코스 이어하기 (코스가 존재할 때만 표시)
-            if (learningProvider.lessons.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE5E5E5), width: 2),
+            if (learningProvider.userSessions.isNotEmpty) ...[
+              const Text(
+                '진행 중인 학습 코스 이어하기',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF3C3C3C),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFFC800), // 금메달 노랑
-                            shape: BoxShape.circle,
+              ),
+              const SizedBox(height: 12),
+              ...learningProvider.userSessions.map((session) {
+                final double progress = session["progress"] ?? 0.0;
+                final String subject = session["subject"] ?? "";
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE5E5E5), width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFC800), // 금메달 노랑
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.local_fire_department,
+                              color: Colors.white,
+                              size: 24,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.local_fire_department,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '진행 중인 학습 코스',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey,
-                                  fontWeight: FontWeight.bold,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '진행 중인 학습 코스',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                learningProvider.currentSubject,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF3C3C3C),
+                                Text(
+                                  subject,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF3C3C3C),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 프로그레스 바
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: learningProvider.progress,
-                              minHeight: 12,
-                              backgroundColor: const Color(0xFFE5E5E5),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xFF58CC02),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // 프로그레스 바
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 12,
+                                backgroundColor: const Color(0xFFE5E5E5),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF58CC02),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${(learningProvider.progress * 100).toInt()}%',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF3C3C3C),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${(progress * 100).toInt()}%',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF3C3C3C),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    DuoButton(
-                      text: '이어서 학습하기',
-                      color: const Color(0xFF1899D6), // 파란색 버튼
-                      shadowColor: const Color(0xFF147EA9),
-                      onPressed: () {
-                        Navigator.pushNamed(context, AppRoutes.lessons);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      DuoButton(
+                        text: '이어서 학습하기',
+                        color: const Color(0xFF1899D6), // 파란색 버튼
+                        shadowColor: const Color(0xFF147EA9),
+                        onPressed: () {
+                          context.read<LearningProvider>().loadSession(session);
+                          Navigator.pushNamed(context, AppRoutes.lessons);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 8),
             ],
 
             // 4. 기타 유틸리티 카드들

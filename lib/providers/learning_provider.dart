@@ -8,7 +8,11 @@ class LearningProvider extends ChangeNotifier {
 
   List<LessonModel> lessons = [];
   String currentSubject = "";
+  int currentSessionId = 0;
   bool isLoading = false;
+  
+  // 사용자의 전체 학습 세션 목록 (이어서 학습하기용)
+  List<Map<String, dynamic>> userSessions = [];
 
   double get progress {
     if (lessons.isEmpty) return 0.0;
@@ -16,24 +20,50 @@ class LearningProvider extends ChangeNotifier {
     return completed / lessons.length;
   }
 
-  Future<void> generateCurriculum(String subject) async {
+  // 커리큘럼 생성 및 신규 세션 등록
+  Future<void> generateCurriculum(String subject, int userId) async {
     isLoading = true;
     notifyListeners();
 
     try {
-      final newLessons = await _questionService.generateCurriculum(subject: subject);
-      lessons = newLessons;
-      currentSubject = subject;
+      final result = await _questionService.generateCurriculum(
+        subject: subject,
+        userId: userId,
+      );
+      
+      currentSessionId = result["sessionId"] ?? 0;
+      currentSubject = result["subject"] ?? subject;
+      lessons = result["lessons"] as List<LessonModel>;
+      
+      // 세션 목록 갱신
+      await fetchUserSessions(userId);
     } catch (e) {
       print("❌ 커리큘럼 생성 실패: $e");
-      // 예외 발생 시 더미 데이터를 설정하지 않고 그대로 에러를 상위로 던지거나 알립니다.
+      rethrow; // 에러를 화면 단으로 전파하여 SnackBar 등으로 표시하도록 함
     } finally {
       isLoading = false;
       notifyListeners();
     }
   }
 
-  void completeLesson(int lessonId) {
+  // 사용자 학습 세션 목록 불러오기
+  Future<void> fetchUserSessions(int userId) async {
+    final list = await _questionService.fetchUserSessions(userId);
+    userSessions = list;
+    notifyListeners();
+  }
+
+  // 기존 세션 이어서 학습하기 활성화
+  void loadSession(Map<String, dynamic> session) {
+    currentSessionId = session["id"] ?? 0;
+    currentSubject = session["subject"] ?? "";
+    lessons = session["lessons"] as List<LessonModel>;
+    notifyListeners();
+  }
+
+  // 단원(레벨) 완료 처리 및 DB 반영
+  Future<void> completeLesson(int lessonId) async {
+    // 1. 메모리 상의 완료 처리 및 다음 단계 해금
     lessons = lessons.map((lesson) {
       if (lesson.id == lessonId) {
         return LessonModel(
@@ -62,5 +92,13 @@ class LearningProvider extends ChangeNotifier {
     }).toList();
 
     notifyListeners();
+
+    // 2. 백엔드 DB 업데이트 요청
+    if (currentSessionId > 0) {
+      await _questionService.completeLesson(
+        sessionId: currentSessionId,
+        lessonId: lessonId,
+      );
+    }
   }
 }

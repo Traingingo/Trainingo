@@ -117,17 +117,20 @@ class LessonListScreen extends StatelessWidget {
 
                   // 로딩바가 있는 퀴즈 화면으로 가기 전 문제를 미리 요청
                   final questionProvider = context.read<QuestionProvider>();
+                  final learningProvider = context.read<LearningProvider>();
                   
                   // 비동기로 AI 문제 생성 시작
                   questionProvider.generateQuestions(
                     subject: subject,
                     difficulty: '초급',
                     type: '객관식',
+                    sessionId: learningProvider.currentSessionId,
                     levelTitle: lesson.title,
                     levelDescription: lesson.description,
                   );
 
                   // 퀴즈 화면으로 이동
+                  if (!context.mounted) return;
                   Navigator.pushNamed(
                     context,
                     AppRoutes.questions,

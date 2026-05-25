@@ -1,17 +1,30 @@
 import '../models/user_model.dart';
+import 'api_service.dart';
 
 class AuthService {
-  Future<UserModel> login(String email, String password) async {
-    await Future.delayed(const Duration(milliseconds: 700));
+  final ApiService _apiService = ApiService();
 
-    return UserModel(
-      id: 1,
-      email: email,
-      nickname: '건희',
-    );
+  Future<UserModel> login(String email, String password) async {
+    final response = await _apiService.post('/api/auth/login', {
+      'email': email,
+      'password': password,
+    });
+    
+    return UserModel.fromJson(response['user']);
+  }
+
+  Future<UserModel> register(String email, String password, String nickname) async {
+    final response = await _apiService.post('/api/auth/register', {
+      'email': email,
+      'password': password,
+      'nickname': nickname,
+    });
+    
+    return UserModel.fromJson(response['user']);
   }
 
   Future<void> logout() async {
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 로컬 로그아웃만 수행하므로 가벼운 지연 시간 설정
+    await Future.delayed(const Duration(milliseconds: 100));
   }
 }
