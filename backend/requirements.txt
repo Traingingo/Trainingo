@@ -1,7 +1,8 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 python-dotenv
 groq
-Presentation
-PdfReader
+pypdf
+python-pptx
+python-multipart
