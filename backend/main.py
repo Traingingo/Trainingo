@@ -119,7 +119,7 @@ async def generate_curriculum_from_source_text(source_text: str) -> List[dict]:
     학습자가 본 문서의 개념을 기초부터 단계별로 학습할 수 있도록 4단계(Level 1 ~ 4) 코스로 작성해 주세요.
     """
     response = await client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         response_format={"type": "json_object"},
@@ -245,7 +245,7 @@ async def generate_curriculum(request: CurriculumRequest):
         학습자가 기초부터 응용까지 올라갈 수 있도록 4단계(Level 1 ~ 4)로 구성해 주세요.
         """
         response = await client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             response_format={"type": "json_object"},
@@ -291,7 +291,7 @@ async def generate_questions(request: QuestionRequest):
         {{"questions": [{{"question": "문제 내용", "options": ["1번 보기", "2번 보기", "3번 보기", "4번 보기"], "answer": "정답 내용", "explanation": "해설 내용"}}]}}
         """
         response = await client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             response_format={"type": "json_object"},
