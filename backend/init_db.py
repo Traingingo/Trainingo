@@ -1,4 +1,4 @@
-from . import database
+import database
 
 
 def main():
