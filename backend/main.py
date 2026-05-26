@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from pptx import Presentation
 from pypdf import PdfReader
 
-from . import database
+import database
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
