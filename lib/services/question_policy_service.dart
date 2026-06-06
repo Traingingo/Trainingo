@@ -76,9 +76,10 @@ class SubjectQuestionPolicy {
           QuestionType.coding,
         ];
       case SubjectType.practical:
-        final supportsSql = subjectName.toLowerCase().contains('sql') ||
-            subjectName.toLowerCase().contains('database') ||
-            subjectName.toLowerCase().contains('db') ||
+        final lowerSubject = subjectName.toLowerCase();
+        final supportsSql = lowerSubject.contains('sql') ||
+            lowerSubject.contains('database') ||
+            lowerSubject.contains('db') ||
             subjectName.contains('데이터베이스');
         return [
           QuestionType.multipleChoice,
@@ -198,6 +199,11 @@ class QuestionTypePlanner {
 }
 
 class LearningModePlanner {
+  static int _decreaseMultipleChoice(Map<QuestionType, int> weights, int amount) {
+    final current = weights[QuestionType.multipleChoice] ?? 0;
+    return current - amount < 0 ? 0 : current - amount;
+  }
+
   static Map<QuestionType, int> buildWeights({
     required LearningMode mode,
     required int level,
@@ -245,10 +251,10 @@ class LearningModePlanner {
         );
         if (allowed.contains(QuestionType.coding)) {
           weights[QuestionType.coding] = (weights[QuestionType.coding] ?? 0) + 15;
-          weights[QuestionType.multipleChoice] = ((weights[QuestionType.multipleChoice] ?? 0) - 15).clamp(0, 100);
+          weights[QuestionType.multipleChoice] = _decreaseMultipleChoice(weights, 15);
         } else if (allowed.contains(QuestionType.sqlWriting)) {
           weights[QuestionType.sqlWriting] = (weights[QuestionType.sqlWriting] ?? 0) + 15;
-          weights[QuestionType.multipleChoice] = ((weights[QuestionType.multipleChoice] ?? 0) - 15).clamp(0, 100);
+          weights[QuestionType.multipleChoice] = _decreaseMultipleChoice(weights, 15);
         }
         break;
       case LearningMode.custom:
