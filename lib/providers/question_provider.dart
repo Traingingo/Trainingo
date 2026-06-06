@@ -12,6 +12,7 @@ class QuestionProvider extends ChangeNotifier {
   List<QuestionModel> questions = [];
   int currentIndex = 0;
   int score = 0;
+  int activeSessionId = 0;
   bool isLoading = false;
   String? selectedAnswer;
   AnswerGradeResult? lastGradeResult;
@@ -37,6 +38,7 @@ class QuestionProvider extends ChangeNotifier {
     isLoading = true;
     currentIndex = 0;
     score = 0;
+    activeSessionId = sessionId;
     selectedAnswer = null;
     lastGradeResult = null;
     hearts = maxHearts;
@@ -83,7 +85,7 @@ class QuestionProvider extends ChangeNotifier {
 
     _questionService.submitAnswer(
       userId: userId,
-      sessionId: sessionId,
+      sessionId: sessionId > 0 ? sessionId : activeSessionId,
       subject: subject,
       question: question,
       userAnswer: answer,
