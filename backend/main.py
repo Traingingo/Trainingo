@@ -2,7 +2,7 @@ import io
 import json
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -38,6 +38,11 @@ class QuestionRequest(BaseModel):
     level_description: str = ""
     count: int = 10
     session_id: int = 0
+    mode: str = "recommended"
+    subject_type: str = "conceptual"
+    level: int = 1
+    allowed_question_types: List[str] = []
+    question_type_weights: Dict[str, int] = {}
 
 
 class CurriculumRequest(BaseModel):
@@ -198,6 +203,104 @@ def build_material_subject(uploaded_files: List[str]) -> str:
     return f"[자료] {uploaded_files[0]}" if len(uploaded_files) == 1 else f"[자료] {uploaded_files[0]} 외 {len(uploaded_files) - 1}개"
 
 
+def build_type_counts(weights: Dict[str, int], total_count: int) -> Dict[str, int]:
+    if not weights:
+        return {"multiple_choice": total_count}
+
+    positive = {key: value for key, value in weights.items() if value > 0}
+    total_weight = sum(positive.values())
+    if total_weight <= 0:
+        return {"multiple_choice": total_count}
+
+    raw = []
+    for q_type, weight in positive.items():
+        exact = total_count * weight / total_weight
+        floor_value = int(exact)
+        raw.append({"type": q_type, "count": floor_value, "remain": exact - floor_value})
+
+    used = sum(item["count"] for item in raw)
+    remain_count = total_count - used
+    raw.sort(key=lambda item: item["remain"], reverse=True)
+
+    for i in range(remain_count):
+        raw[i % len(raw)]["count"] += 1
+
+    return {item["type"]: item["count"] for item in raw if item["count"] > 0}
+
+
+def build_question_prompt(request: QuestionRequest, source_text: Optional[str], type_counts: Dict[str, int]) -> str:
+    context_str = f"학습 단원은 '{request.level_title}' ({request.level_description}) 입니다." if request.level_title else ""
+    if source_text:
+        basis = f"""
+        아래 [참고자료] 내용에만 기반해 문제를 생성하세요.
+        [참고자료]
+        {source_text[:15000]}
+        """
+    else:
+        basis = f"일반적으로 알려진 {request.subject} 과목 지식을 기반으로 문제를 생성하세요."
+
+    return f"""
+    당신은 유능한 교육 전문가입니다.
+
+    [과목]
+    {request.subject}
+
+    [과목 유형]
+    {request.subject_type}
+
+    [학습 모드]
+    {request.mode}
+
+    [학습 단원]
+    {context_str}
+
+    [난이도]
+    {request.difficulty}
+
+    [문제 생성 근거]
+    {basis}
+
+    [허용된 문제 유형]
+    {json.dumps(request.allowed_question_types, ensure_ascii=False)}
+
+    [반드시 지킬 문제 유형별 개수]
+    {json.dumps(type_counts, ensure_ascii=False)}
+
+    [중요 규칙]
+    1. questions 배열에는 총 {request.count}개의 문제를 넣으세요.
+    2. 각 문제의 type은 반드시 허용된 문제 유형 중 하나여야 합니다.
+    3. conceptual 과목에는 coding, code_reading, sql_writing, command_writing 문제를 만들지 마세요.
+    4. calculation 과목에는 coding 대신 calculation 문제를 사용하세요.
+    5. practical 과목 중 데이터베이스/SQL 단원은 sql_writing 문제를 사용할 수 있습니다.
+    6. programming 과목은 code_reading 또는 coding 문제를 사용할 수 있습니다.
+    7. 객관식 문제만 options를 4개 제공합니다.
+    8. 단답형, 서술형, 코딩형, SQL 작성형, 계산형의 options는 빈 배열로 둡니다.
+    9. 서술형 문제에는 rubric을 2~4개 제공합니다.
+    10. 코딩형/SQL 작성형 문제에는 starter_code 또는 test_cases를 가능한 경우 제공합니다.
+    11. 반드시 JSON object만 반환하세요. JSON 밖에는 아무 문장도 쓰지 마세요.
+
+    [반환 JSON 형식]
+    {{
+      "questions": [
+        {{
+          "id": 1,
+          "type": "multiple_choice",
+          "question": "문제 내용",
+          "options": ["보기1", "보기2", "보기3", "보기4"],
+          "answer": "정답",
+          "explanation": "해설",
+          "code": "",
+          "language": "",
+          "starter_code": "",
+          "test_cases": [],
+          "rubric": [],
+          "expected_format": ""
+        }}
+      ]
+    }}
+    """
+
+
 @app.post("/api/auth/register")
 async def register(request: RegisterRequest):
     user = database.register_user(request.email, request.password, request.nickname)
@@ -270,30 +373,25 @@ async def generate_curriculum(request: CurriculumRequest):
 @app.post("/api/generate-questions")
 async def generate_questions(request: QuestionRequest):
     try:
-        context_str = f" 학습 단원은 '{request.level_title}' ({request.level_description}) 입니다." if request.level_title else ""
         source_text = database.get_session_source_text(request.session_id) if request.session_id > 0 else None
         if source_text:
             print(f"📖 세션 ID {request.session_id}의 문서 데이터를 활용하여 문제를 생성합니다. (RAG 적용)")
-            basis = f"""
-            제공된 아래의 [참고자료] 내용에만 기반해 {request.subject} 과목{context_str}에 대한 객관식 퀴즈를 생성해 주세요.
-            [참고자료]
-            {source_text[:15000]}
-            """
         else:
             print(f"🤖 일반 지식 기반 문제를 생성합니다: '{request.subject}'")
-            basis = f"{request.subject} 과목{context_str}에 대한 객관식 퀴즈를 생성해 주세요."
 
-        prompt = f"""
-        당신은 유능한 교육 전문가입니다. {basis}
-        난이도는 '{request.difficulty}'이며, 총 {request.count}문제를 만들어야 합니다.
-        반드시 questions 배열에 총 {request.count}개의 문제를 넣어 주세요.
-        반드시 아래 JSON object 형식으로만 응답하세요.
-        {{"questions": [{{"question": "문제 내용", "options": ["1번 보기", "2번 보기", "3번 보기", "4번 보기"], "answer": "정답 내용", "explanation": "해설 내용"}}]}}
-        """
+        if not request.allowed_question_types:
+            request.allowed_question_types = ["multiple_choice"]
+        if not request.question_type_weights:
+            request.question_type_weights = {"multiple_choice": 100}
+
+        allowed_set = set(request.allowed_question_types)
+        type_counts = build_type_counts(request.question_type_weights, request.count)
+        prompt = build_question_prompt(request, source_text, type_counts)
+
         response = await client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
+            temperature=0.2,
             response_format={"type": "json_object"},
         )
         parsed_questions = json.loads(response.choices[0].message.content.strip()).get("questions", [])
@@ -308,20 +406,37 @@ async def generate_questions(request: QuestionRequest):
                     continue
             if not isinstance(q, dict):
                 continue
-            options = q.get("options", ["-", "-", "-", "-"])
-            if not isinstance(options, list):
-                options = ["-", "-", "-", "-"]
+
+            q_type = q.get("type", "multiple_choice")
+            if q_type not in allowed_set:
+                continue
+
+            options = q.get("options", [])
+            if q_type == "multiple_choice":
+                if not isinstance(options, list) or len(options) < 2:
+                    continue
+            else:
+                options = []
+
             final_questions.append(
                 {
                     "id": len(final_questions) + 1,
+                    "type": q_type,
                     "question": q.get("question", "문제를 생성하지 못했습니다."),
                     "options": options,
                     "answer": q.get("answer", ""),
                     "explanation": q.get("explanation", "해설이 제공되지 않았습니다."),
                     "source_type": "Document" if source_text else "AI",
                     "difficulty": request.difficulty,
+                    "code": q.get("code", ""),
+                    "language": q.get("language", ""),
+                    "starter_code": q.get("starter_code", ""),
+                    "test_cases": q.get("test_cases", []),
+                    "rubric": q.get("rubric", []),
+                    "expected_format": q.get("expected_format", ""),
                 }
             )
+
         actual_count = len(final_questions)
         if actual_count < request.count:
             print(f"⚠️ 요청한 {request.count}문제보다 적은 {actual_count}문제만 생성되었습니다.")
