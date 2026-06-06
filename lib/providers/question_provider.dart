@@ -24,17 +24,15 @@ class QuestionProvider extends ChangeNotifier {
     return questions[currentIndex];
   }
 
-  bool get isLastQuestion {
-    return currentIndex == questions.length - 1;
-  }
+  bool get isLastQuestion => currentIndex == questions.length - 1;
 
   Future<void> generateQuestions({
     required String subject,
     required String difficulty,
     required QuestionGenerationConfig config,
     int sessionId = 0,
-    String levelTitle = "",
-    String levelDescription = "",
+    String levelTitle = '',
+    String levelDescription = '',
   }) async {
     isLoading = true;
     currentIndex = 0;
@@ -44,17 +42,19 @@ class QuestionProvider extends ChangeNotifier {
     hearts = maxHearts;
     notifyListeners();
 
-    questions = await _questionService.generateQuestions(
-      subject: subject,
-      difficulty: difficulty,
-      config: config,
-      sessionId: sessionId,
-      levelTitle: levelTitle,
-      levelDescription: levelDescription,
-    );
-
-    isLoading = false;
-    notifyListeners();
+    try {
+      questions = await _questionService.generateQuestions(
+        subject: subject,
+        difficulty: difficulty,
+        config: config,
+        sessionId: sessionId,
+        levelTitle: levelTitle,
+        levelDescription: levelDescription,
+      );
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
 
   void selectAnswer(String answer) {
@@ -62,14 +62,16 @@ class QuestionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool checkAnswer({required int userId, required String subject}) {
+  bool checkAnswer({
+    required int userId,
+    required String subject,
+    int sessionId = 0,
+  }) {
     final question = currentQuestion;
-    if (question == null || selectedAnswer == null) return false;
+    final answer = selectedAnswer;
+    if (question == null || answer == null) return false;
 
-    final gradeResult = _answerGradingService.grade(
-      question: question,
-      userAnswer: selectedAnswer!,
-    );
+    final gradeResult = _answerGradingService.grade(question: question, userAnswer: answer);
     final isCorrect = gradeResult.isCorrect;
     lastGradeResult = gradeResult;
 
@@ -77,16 +79,16 @@ class QuestionProvider extends ChangeNotifier {
       score++;
     } else {
       hearts--;
-      _questionService.saveIncorrectAnswer(
-        userId: userId,
-        subject: subject,
-        question: question.question,
-        options: question.options,
-        answer: question.displayAnswer,
-        explanation: question.explanation,
-        userAnswer: selectedAnswer!,
-      );
     }
+
+    _questionService.submitAnswer(
+      userId: userId,
+      sessionId: sessionId,
+      subject: subject,
+      question: question,
+      userAnswer: answer,
+      isCorrect: isCorrect,
+    );
 
     notifyListeners();
     return isCorrect;
