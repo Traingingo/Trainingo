@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/quiz_setup_options.dart';
+import '../../models/learning_level.dart';
+import '../../models/question_generation_mode.dart';
+import '../../models/question_setup_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/learning_provider.dart';
 import '../../routes/app_routes.dart';
@@ -15,60 +17,45 @@ class QuestionSetupScreen extends StatefulWidget {
 }
 
 class _QuestionSetupScreenState extends State<QuestionSetupScreen> {
-  late final TextEditingController _topicController;
-  QuestionGenerationMode _generationMode = QuestionGenerationMode.aiOnly;
-  LearningLevel _learningLevel = LearningLevel.beginner;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _topicController = TextEditingController();
-  }
+  QuestionSetupArguments? _args;
+  QuestionGenerationMode _selectedMode = QuestionGenerationMode.aiOnly;
+  LearningLevel _selectedLevel = LearningLevel.beginner;
+  bool _initialized = false;
+  bool _isSubmitting = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is QuizSetupArgs && _topicController.text.isEmpty) {
-      _topicController.text = args.topic;
-      _generationMode = args.initialMode;
-      _learningLevel = args.initialLevel;
+    if (_initialized) return;
+
+    final routeArgs = ModalRoute.of(context)?.settings.arguments;
+    if (routeArgs is QuestionSetupArguments) {
+      _args = routeArgs;
+      _selectedMode = routeArgs.initialMode;
+      _selectedLevel = routeArgs.initialLevel;
+    } else {
+      _args = const QuestionSetupArguments(topic: '');
     }
+    _initialized = true;
   }
 
-  @override
-  void dispose() {
-    _topicController.dispose();
-    super.dispose();
-  }
-
-  bool _validate() {
-    final topic = _topicController.text.trim();
-    if (topic.isEmpty && _generationMode != QuestionGenerationMode.materialOnly) {
-      setState(() => _errorMessage = 'AI 생성 또는 혼합 생성에는 학습 주제를 입력해 주세요.');
-      return false;
-    }
-    setState(() => _errorMessage = null);
-    return true;
-  }
+  bool get _hasUploadedMaterial => _args?.hasUploadedMaterial ?? false;
 
   Future<void> _goNext() async {
-    if (!_validate()) return;
+    final args = _args;
+    final topic = args?.topic.trim() ?? '';
 
-    final setup = QuizSetupResult(
-      topic: _topicController.text.trim(),
-      generationMode: _generationMode,
-      learningLevel: _learningLevel,
-    );
+    if (topic.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('학습 주제를 찾을 수 없습니다. 홈에서 다시 시작해 주세요.'), backgroundColor: Colors.redAccent),
+      );
+      return;
+    }
 
-    context.read<LearningProvider>().setQuizSetup(
-          generationMode: setup.generationMode,
-          learningLevel: setup.learningLevel,
-        );
-
-    if (setup.requiresMaterialUpload) {
-      Navigator.pushNamed(context, AppRoutes.materials, arguments: setup);
+    if (_selectedMode.requiresMaterial && !_hasUploadedMaterial) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('자료 기반 또는 혼합 생성은 먼저 자료 업로드가 필요합니다.'), backgroundColor: Colors.redAccent),
+      );
       return;
     }
 
@@ -76,13 +63,45 @@ class _QuestionSetupScreenState extends State<QuestionSetupScreen> {
     if (user == null) return;
 
     final learningProvider = context.read<LearningProvider>();
+    setState(() {
+      _isSubmitting = true;
+    });
+
     try {
-      await learningProvider.generateCurriculum(
-        setup.topic,
-        user.id,
-        generationMode: setup.generationMode,
-        learningLevel: setup.learningLevel,
+      learningProvider.setQuestionSetup(
+        generationMode: _selectedMode,
+        learningLevel: _selectedLevel,
       );
+
+      final existingSessionId = args?.existingSessionId ?? 0;
+      if (existingSessionId > 0) {
+        if (learningProvider.currentSessionId != existingSessionId) {
+          await learningProvider.fetchUserSessions(user.id);
+          Map<String, dynamic>? session;
+          for (final candidate in learningProvider.userSessions) {
+            if (candidate['id']?.toString() == existingSessionId.toString()) {
+              session = candidate;
+              break;
+            }
+          }
+          if (session != null) {
+            learningProvider.loadSession(session);
+          }
+        }
+        learningProvider.setQuestionSetup(
+          generationMode: _selectedMode,
+          learningLevel: _selectedLevel,
+        );
+        await learningProvider.updateCurrentSessionSetup(user.id);
+      } else {
+        await learningProvider.generateCurriculum(
+          topic,
+          user.id,
+          generationMode: _selectedMode,
+          learningLevel: _selectedLevel,
+        );
+      }
+
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, AppRoutes.lessons);
     } catch (e) {
@@ -93,165 +112,183 @@ class _QuestionSetupScreenState extends State<QuestionSetupScreen> {
           backgroundColor: Colors.redAccent,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<LearningProvider>().isLoading;
+    final topic = _args?.topic.trim() ?? '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('문제 생성 설정', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
+        title: const Text(
+          '문제 생성 설정',
+          style: TextStyle(color: Color(0xFF3C3C3C), fontWeight: FontWeight.w900),
+        ),
         iconTheme: const IconThemeData(color: Color(0xFF3C3C3C)),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF58CC02))))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _SetupSection(
-                    title: '학습 주제',
-                    child: TextField(
-                      controller: _topicController,
-                      decoration: InputDecoration(
-                        hintText: '예: Flutter 상태관리, 데이터베이스 정규화',
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(color: Color(0xFFE5E5E5), width: 2),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(color: Color(0xFF58CC02), width: 2),
-                        ),
-                      ),
-                      onChanged: (_) {
-                        if (_errorMessage != null) setState(() => _errorMessage = null);
-                      },
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFE5E5E5), width: 2),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('학습 주제', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(
+                      topic.isEmpty ? '주제 없음' : topic,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C)),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  _SetupSection(
-                    title: '문제 생성 방식',
-                    child: Column(
-                      children: QuestionGenerationMode.values.map((mode) {
-                        return _SelectableSetupTile(
-                          title: mode.label,
-                          description: mode.description,
-                          icon: mode == QuestionGenerationMode.aiOnly
-                              ? Icons.smart_toy_rounded
-                              : mode == QuestionGenerationMode.materialOnly
-                                  ? Icons.description_rounded
-                                  : Icons.auto_awesome_rounded,
-                          selected: _generationMode == mode,
-                          onTap: () => setState(() => _generationMode = mode),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _SetupSection(
-                    title: '학습 수준',
-                    child: Column(
-                      children: LearningLevel.values.map((level) {
-                        return _SelectableSetupTile(
-                          title: level.label,
-                          description: level.description,
-                          icon: level == LearningLevel.beginner
-                              ? Icons.looks_one_rounded
-                              : level == LearningLevel.intermediate
-                                  ? Icons.looks_two_rounded
-                                  : Icons.looks_3_rounded,
-                          selected: _learningLevel == level,
-                          onTap: () => setState(() => _learningLevel = level),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                    if (_hasUploadedMaterial) ...[
+                      const SizedBox(height: 10),
+                      const _InfoChip(icon: Icons.description_outlined, text: '업로드 자료 연결됨', color: Color(0xFF1899D6)),
+                    ],
                   ],
-                  const SizedBox(height: 24),
-                  DuoButton(
-                    text: _generationMode.requiresMaterial ? '자료 업로드로 이동' : '다음',
-                    icon: Icons.arrow_forward_rounded,
-                    onPressed: _goNext,
-                  ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 24),
+              const Text('문제 생성 방식', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
+              const SizedBox(height: 12),
+              ...QuestionGenerationMode.values.map(
+                (mode) => _SelectableCard(
+                  selected: _selectedMode == mode,
+                  enabled: !mode.requiresMaterial || _hasUploadedMaterial,
+                  title: mode.label,
+                  description: mode.description,
+                  icon: mode == QuestionGenerationMode.aiOnly
+                      ? Icons.auto_awesome
+                      : mode == QuestionGenerationMode.materialOnly
+                          ? Icons.description
+                          : Icons.hub,
+                  onTap: () {
+                    if (mode.requiresMaterial && !_hasUploadedMaterial) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('이 방식은 자료 업로드 후 선택할 수 있습니다.'), backgroundColor: Colors.redAccent),
+                      );
+                      return;
+                    }
+                    setState(() {
+                      _selectedMode = mode;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text('학습 수준', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
+              const SizedBox(height: 12),
+              ...LearningLevel.values.map(
+                (level) => _SelectableCard(
+                  selected: _selectedLevel == level,
+                  title: level.label,
+                  description: level.description,
+                  icon: level == LearningLevel.beginner
+                      ? Icons.looks_one
+                      : level == LearningLevel.intermediate
+                          ? Icons.looks_two
+                          : Icons.workspace_premium,
+                  onTap: () {
+                    setState(() {
+                      _selectedLevel = level;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(height: 28),
+              if (_isSubmitting)
+                const Center(
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF58CC02))),
+                      SizedBox(height: 14),
+                      Text('선택한 설정으로 학습을 준비하고 있습니다.', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                )
+              else
+                DuoButton(
+                  text: '다음',
+                  icon: Icons.arrow_forward,
+                  color: const Color(0xFF58CC02),
+                  shadowColor: const Color(0xFF46A302),
+                  onPressed: _goNext,
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _SetupSection extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _SetupSection({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
-        const SizedBox(height: 10),
-        child,
-      ],
-    );
-  }
-}
-
-class _SelectableSetupTile extends StatelessWidget {
+class _SelectableCard extends StatelessWidget {
+  final bool selected;
+  final bool enabled;
   final String title;
   final String description;
   final IconData icon;
-  final bool selected;
   final VoidCallback onTap;
 
-  const _SelectableSetupTile({
+  const _SelectableCard({
+    required this.selected,
     required this.title,
     required this.description,
     required this.icon,
-    required this.selected,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final borderColor = selected ? const Color(0xFF58CC02) : const Color(0xFFE5E5E5);
+    final iconColor = enabled ? (selected ? const Color(0xFF58CC02) : const Color(0xFF1899D6)) : Colors.grey;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: onTap,
+        onTap: enabled ? onTap : onTap,
         borderRadius: BorderRadius.circular(20),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: enabled ? Colors.white : Colors.grey.shade100,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: selected ? const Color(0xFF58CC02) : const Color(0xFFE5E5E5), width: 2),
+            border: Border.all(color: borderColor, width: selected ? 2.5 : 2),
           ),
           child: Row(
             children: [
-              Icon(icon, color: selected ? const Color(0xFF58CC02) : Colors.grey, size: 30),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: iconColor.withOpacity(0.12), shape: BoxShape.circle),
+                child: Icon(icon, color: iconColor),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
+                    Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: enabled ? const Color(0xFF3C3C3C) : Colors.grey)),
                     const SizedBox(height: 4),
-                    Text(description, style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.3)),
+                    Text(description, style: TextStyle(fontSize: 12.5, color: enabled ? Colors.grey.shade700 : Colors.grey, height: 1.35)),
                   ],
                 ),
               ),
@@ -259,6 +296,30 @@ class _SelectableSetupTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  const _InfoChip({required this.icon, required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color)),
+        ],
       ),
     );
   }
