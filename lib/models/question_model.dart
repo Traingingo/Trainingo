@@ -1,3 +1,5 @@
+export 'question_type.dart';
+
 import 'question_type.dart';
 
 class QuestionModel {
