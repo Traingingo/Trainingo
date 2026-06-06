@@ -1,7 +1,6 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-
-import '../providers/settings_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum SoundEffect {
   click,
@@ -15,20 +14,24 @@ enum SoundEffect {
 }
 
 class SoundService {
+  SoundService._();
+
+  static final SoundService instance = SoundService._();
+
+  static const String effectsEnabledKey = 'settings_effects_enabled';
+  static const String answerSoundsEnabledKey = 'settings_answer_sounds_enabled';
+
   final AudioPlayer _player = AudioPlayer();
-  SettingsProvider settings;
-
-  SoundService(this.settings);
-
-  void updateSettings(SettingsProvider newSettings) {
-    settings = newSettings;
-  }
 
   Future<void> play(SoundEffect effect) async {
-    if (!settings.effectsEnabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    final effectsEnabled = prefs.getBool(effectsEnabledKey) ?? true;
+    final answerSoundsEnabled = prefs.getBool(answerSoundsEnabledKey) ?? true;
+
+    if (!effectsEnabled) return;
 
     final isAnswerSound = effect == SoundEffect.correct || effect == SoundEffect.wrong;
-    if (isAnswerSound && !settings.answerSoundsEnabled) return;
+    if (isAnswerSound && !answerSoundsEnabled) return;
 
     try {
       await _player.stop();
@@ -57,9 +60,5 @@ class SoundService {
       case SoundEffect.softAlert:
         return 'sounds/soft_alert.mp3';
     }
-  }
-
-  Future<void> dispose() async {
-    await _player.dispose();
   }
 }
