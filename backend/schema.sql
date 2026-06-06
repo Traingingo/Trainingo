@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS study_daily_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_study_sessions_user_updated
-ON study_sessions(user_id, COALESCE(last_studied_at, updated_at, created_at) DESC);
+ON study_sessions(user_id, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_lessons_session_level
 ON lessons(session_id, level);
