@@ -24,87 +24,218 @@ backend/
  ┗ requirements.txt
 ```
 
-## 이번 변경 사항
-
-- Flutter Web 라우트 가드 추가
-    - `/home`, `/lessons`, `/questions`, `/materials`, `/review` 직접 접근 시 로그인하지 않았으면 `/login`으로 이동합니다.
-    - 로그인 사용자가 `/login`에 접근하면 `/home`으로 이동합니다.
-    - `shared_preferences`로 로그인 사용자를 저장해 Web 새로고침 후에도 최대한 자연스럽게 복원합니다.
-- 자료 업로드 개선
-    - PDF, PPT, PPTX, TXT 파일을 여러 개 선택할 수 있습니다.
-    - Flutter Web/Windows에서 동작하도록 `PlatformFile.bytes` 기반 multipart 업로드를 사용합니다.
-    - 서버는 여러 파일의 추출 텍스트를 `[파일명: example.pdf]` 헤더와 함께 하나의 `source_text`로 합칩니다.
-    - `.ppt`는 선택은 가능하지만 서버에서 안정적으로 읽을 수 없으므로 `.pptx` 변환 안내를 반환합니다.
-- 기존 로드맵 자료 추가
-    - `POST /api/upload-material`에 선택적으로 `session_id`, `regenerate_curriculum`을 보낼 수 있습니다.
-    - `session_id`가 있으면 기존 `study_sessions.source_text` 뒤에 새 자료 텍스트를 append합니다.
-    - `regenerate_curriculum=false`이면 기존 로드맵을 유지합니다.
-    - `regenerate_curriculum=true`이면 누적 자료 기준으로 커리큘럼을 다시 생성합니다.
-- 문제 수 변경
-    - 프론트와 백엔드 기본 문제 수를 10개로 변경했습니다.
-    - LLM이 10개보다 적게 반환하면 가능한 문제만 반환하고 서버 로그에 실제 생성 개수를 남깁니다.
-- DB 초기화 분리
-    - `main.py`에서 서버 시작 시 무조건 `database.init_db()`를 호출하지 않습니다.
-    - DB 스키마는 `backend/schema.sql`, 초기화 실행은 `backend/init_db.py`로 분리했습니다.
-
 ## 백엔드 실행 방법
 
-### 1. Python 패키지 설치
+## Flutter 실행 방법
+
+Flutter 앱은 Android Studio에서 실행합니다.
+
+실행 방식은 다음 두 가지로 나뉩니다.
+
+1. 실제 핸드폰을 USB로 연결해서 실행
+2. Android Emulator, 즉 가상 디바이스로 실행
+
+실행 전에 PyCharm에서 FastAPI 백엔드 서버가 먼저 실행되어 있어야 합니다.
+
+---
+
+### 1. 백엔드 서버 실행 확인
+
+프로젝트 루트에서 백엔드 서버를 실행합니다.
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. 환경 변수 준비
-
-```bash
-cp .env.example .env
-```
-
-`backend/.env` 예시:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-DATABASE_URL=sqlite:///./backend/trainingo.db
-# 또는
-# DB_PATH=./backend/trainingo.db
-```
-
-상대 경로는 프로젝트 루트를 기준으로 해석됩니다.
-
-### 3. DB 초기화
-
-프로젝트 루트에서 실행합니다.
-
-```bash
-python backend/init_db.py
-```
-
-정상 실행되면 `backend/trainingo.db`가 생성되고 다음 테이블을 확인할 수 있습니다.
-
-- `users`
-- `study_sessions`
-- `lessons`
-- `incorrect_answers`
-
-### 4. FastAPI 서버 실행
-
-프로젝트 루트에서 실행합니다.
-
-```bash
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-기본 API 주소는 다음과 같습니다.
+서버가 정상 실행되면 다음 주소에서 확인할 수 있습니다.
 
 ```text
 http://127.0.0.1:8000
+http://127.0.0.1:8000/docs
 ```
 
-## Flutter 실행 방법
+> 기존처럼 Flutter Web 또는 Windows 데스크톱에서만 테스트할 경우에는 `--host 127.0.0.1`로 실행해도 됩니다.
+> 하지만 실제 핸드폰 USB 실행이나 Emulator 실행까지 고려하면 `--host 0.0.0.0`으로 실행하는 것을 권장합니다.
+
+---
+
+# 실제 핸드폰 USB 연결 실행
+
+실제 핸드폰을 USB로 연결해서 실행할 때는 `adb reverse`를 사용합니다.
+
+이 방식을 사용하면 공유기 IP가 바뀌어도 Flutter 코드의 백엔드 주소를 매번 수정하지 않아도 됩니다.
+
+---
+
+## 1. Flutter 백엔드 주소 설정
+
+실제 핸드폰 USB 연결 기준으로 Flutter 코드의 백엔드 주소는 다음과 같이 설정합니다.
+
+```dart
+const String baseUrl = "http://127.0.0.1:8000";
+```
+
+예시:
+
+```dart
+class ApiConfig {
+  static const String baseUrl = "http://127.0.0.1:8000";
+}
+```
+
+`adb reverse`를 설정하면 핸드폰 앱에서 `127.0.0.1:8000`으로 요청했을 때 PC의 백엔드 서버로 연결됩니다.
+
+```text
+핸드폰 Flutter 앱
+        ↓
+http://127.0.0.1:8000
+        ↓
+USB 연결 + adb reverse
+        ↓
+PC FastAPI 백엔드 서버
+```
+
+---
+
+## 2. 핸드폰 USB 디버깅 설정
+
+핸드폰에서 다음 설정을 켭니다.
+
+```text
+개발자 옵션 > USB 디버깅 ON
+```
+
+USB 연결 후 핸드폰 화면에 `USB 디버깅을 허용하시겠습니까?` 창이 뜨면 허용합니다.
+
+---
+
+## 3. Android Studio Terminal에서 실행
+
+Android Studio 하단의 Terminal을 열고, Flutter 프로젝트 루트 폴더로 이동합니다.
+
+```powershell
+cd C:\Users\User\KGH_Projects\AndroidStudioProjects\Trainingo
+```
+
+연결된 디바이스를 확인합니다.
+
+```powershell
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" devices
+```
+
+정상적으로 연결되면 다음과 비슷하게 출력됩니다.
+
+```text
+List of devices attached
+기기번호    device
+```
+
+만약 `unauthorized`라고 뜨면 핸드폰 화면에서 USB 디버깅 허용을 눌러야 합니다.
+
+그다음 포트 연결을 설정합니다.
+
+```powershell
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" reverse tcp:8000 tcp:8000
+```
+
+마지막으로 Flutter 앱을 실행합니다.
+
+```powershell
+flutter run
+```
+
+또는 Android Studio의 실행 버튼을 눌러 실행할 수 있습니다.
+
+---
+
+## 4. 실제 핸드폰 USB 실행 요약
+
+PyCharm에서 백엔드 실행:
+
+```bash
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Android Studio Terminal:
+
+```powershell
+cd C:\Users\User\KGH_Projects\AndroidStudioProjects\Trainingo
+
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" devices
+
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" reverse tcp:8000 tcp:8000
+
+flutter run
+```
+
+Flutter 백엔드 주소:
+
+```dart
+const String baseUrl = "http://127.0.0.1:8000";
+```
+
+---
+
+# Android Emulator 가상 디바이스 실행
+
+Android Emulator에서 실행하는 경우에는 `adb reverse`를 사용할 필요가 없습니다.
+
+Android Emulator에서 PC의 localhost에 접근할 때는 `10.0.2.2` 주소를 사용합니다.
+
+---
+
+## 1. Flutter 백엔드 주소 설정
+
+Android Emulator 기준 백엔드 주소는 다음과 같이 설정합니다.
+
+```dart
+const String baseUrl = "http://10.0.2.2:8000";
+```
+
+예시:
+
+```dart
+class ApiConfig {
+  static const String baseUrl = "http://10.0.2.2:8000";
+}
+```
+
+연결 구조는 다음과 같습니다.
+
+```text
+Android Emulator Flutter 앱
+        ↓
+http://10.0.2.2:8000
+        ↓
+PC FastAPI 백엔드 서버
+```
+
+---
+
+## 2. Emulator 실행 순서
+
+먼저 PyCharm에서 백엔드 서버를 실행합니다.
+
+```bash
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+그다음 Android Studio에서 Android Emulator를 실행합니다.
+
+Flutter 프로젝트 루트 폴더에서 앱을 실행합니다.
+
+```powershell
+cd C:\Users\User\KGH_Projects\AndroidStudioProjects\Trainingo
+flutter run
+```
+
+또는 Android Studio의 실행 버튼을 눌러 실행할 수 있습니다.
+
+---
+
+# Flutter Web / Windows 실행
+
+Flutter Web에서 실행하려면 다음 명령어를 사용합니다.
 
 ```bash
 flutter pub get
@@ -117,114 +248,130 @@ Windows 데스크톱에서 확인하려면 다음처럼 실행할 수 있습니�
 flutter run -d windows
 ```
 
-## DataGrip에서 SQLite DB 열기
+Flutter Web 또는 Windows 실행 시에는 백엔드 주소를 다음처럼 사용할 수 있습니다.
 
-1. DataGrip 실행
-2. `+` 버튼 클릭 후 `Data Source` → `SQLite` 선택
-3. `File` 항목에서 `backend/trainingo.db` 선택
-4. 연결 테스트 실행
-5. `users`, `study_sessions`, `lessons`, `incorrect_answers` 테이블 확인
+```dart
+const String baseUrl = "http://127.0.0.1:8000";
+```
 
-DB 파일이 없으면 먼저 프로젝트 루트에서 아래 명령을 실행합니다.
+---
+
+# HTTP 통신 허용 설정
+
+백엔드 서버 주소가 `https://`가 아니라 `http://`라면 Android에서 요청이 막힐 수 있습니다.
+
+이 경우 다음 파일을 수정합니다.
+
+```text
+android/app/src/main/AndroidManifest.xml
+```
+
+`<application>` 태그 안에 다음 옵션을 추가합니다.
 
 ```bash
-python backend/init_db.py
+android:usesCleartextTraffic="true"
 ```
 
-## 주요 API
+예시:
 
-### 인증
+```bash
+<application
+    android:label="trainingo"
+    android:name="${applicationName}"
+    android:usesCleartextTraffic="true"
+    android:icon="@mipmap/ic_launcher">
+```
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
+---
 
-### 학습 세션
+# 실행 환경별 백엔드 주소 정리
 
-- `GET /api/sessions?user_id=...`
-- `POST /api/generate-curriculum`
-- `POST /api/complete-lesson`
+| 실행 환경            | Flutter 백엔드 주소          | 추가 설정                              |
+| ---------------- | ----------------------- | ---------------------------------- |
+| 실제 핸드폰 USB 연결    | `http://127.0.0.1:8000` | `adb reverse tcp:8000 tcp:8000` 필요 |
+| Android Emulator | `http://10.0.2.2:8000`  | 별도 `adb reverse` 불필요               |
+| Flutter Web      | `http://127.0.0.1:8000` | 백엔드 서버만 실행                         |
+| Windows Desktop  | `http://127.0.0.1:8000` | 백엔드 서버만 실행                         |
 
-### 문제 생성
+---
 
-- `POST /api/generate-questions`
-    - 기본 `count`는 10입니다.
+# 자주 발생하는 오류
 
-### 자료 업로드
+## adb 명령어가 인식되지 않는 경우
 
-- `POST /api/upload-material`
-
-새 로드맵 생성 multipart 필드:
+오류 예시:
 
 ```text
-user_id=1
-files=<multiple files>
+adb : 'adb' 용어가 cmdlet, 함수, 스크립트 파일 또는 실행할 수 있는 프로그램 이름으로 인식되지 않습니다.
 ```
 
-기존 로드맵에 자료 추가 multipart 필드:
+이 경우 `adb`가 환경변수 PATH에 등록되어 있지 않은 것입니다.
+
+아래처럼 전체 경로로 실행합니다.
+
+```powershell
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" devices
+```
+
+또는 platform-tools 폴더로 이동해서 실행합니다.
+
+```powershell
+cd C:\Users\User\AppData\Local\Android\Sdk\platform-tools
+.\adb devices
+.\adb reverse tcp:8000 tcp:8000
+```
+
+단, 이 위치에서 `flutter run`을 실행하면 안 됩니다.
+
+`flutter run`은 반드시 `pubspec.yaml` 파일이 있는 Flutter 프로젝트 루트 폴더에서 실행해야 합니다.
+
+---
+
+## No pubspec.yaml file found 오류
+
+오류 예시:
 
 ```text
-user_id=1
-session_id=3
-regenerate_curriculum=false
-files=<multiple files>
+Error: No pubspec.yaml file found.
+This command should be run from the root of your Flutter project.
 ```
 
-응답에는 최소 다음 값이 포함됩니다.
+이 오류는 Flutter 프로젝트 폴더가 아닌 곳에서 `flutter run`을 실행했을 때 발생합니다.
 
-```json
-{
-  "session_id": 1,
-  "subject": "[자료] example.pdf",
-  "progress": 0.0,
-  "curriculum": [],
-  "uploaded_files": ["example.pdf"],
-  "total_extracted_length": 1234
-}
+해결 방법:
+
+```powershell
+cd C:\Users\User\KGH_Projects\AndroidStudioProjects\Trainingo
+flutter run
 ```
 
-### 오답 노트
+---
 
-- `GET /api/incorrect-answers?user_id=...`
-- `POST /api/incorrect-answers`
-- `DELETE /api/incorrect-answers/{answer_id}`
+## 핸드폰이 unauthorized로 뜨는 경우
 
-## 테스트 체크리스트
+`adb devices` 실행 결과가 다음과 같이 나올 수 있습니다.
 
-### 라우트 가드
+```text
+List of devices attached
+기기번호    unauthorized
+```
 
-- 로그아웃 상태에서 브라우저 주소창에 `/home` 입력 → `/login` 화면 표시
-- 로그아웃 상태에서 `/lessons`, `/questions`, `/materials`, `/review` 직접 접근 → `/login` 화면 표시
-- 로그인 후 `/login` 직접 접근 → `/home` 화면 표시
-- 로그인 후 새로고침 → 저장된 사용자 정보가 있으면 로그인 상태 복원
+이 경우 핸드폰 화면에 뜬 USB 디버깅 허용 창에서 허용을 눌러야 합니다.
 
-### 자료 업로드
+핸드폰에서 다음 설정도 확인합니다.
 
-- PDF/TXT/PPTX 파일 여러 개 선택 가능
-- 여러 파일 업로드 후 새 로드맵 생성 가능
-- 응답의 `uploaded_files`, `total_extracted_length` 확인
-- `.ppt` 업로드 시 `.pptx` 변환 안내 메시지 확인
+```text
+개발자 옵션 > USB 디버깅 ON
+```
 
-### 기존 로드맵 자료 추가
+---
 
-- 자료 업로드 화면에서 `기존 로드맵에 추가하기` 선택 가능
-- `GET /api/sessions?user_id=...`로 불러온 로드맵 목록이 드롭다운에 표시
-- `regenerate_curriculum=false`일 때 기존 커리큘럼 유지
-- `regenerate_curriculum=true`일 때 커리큘럼 재생성
+## 백엔드 연결이 안 되는 경우
 
-### 문제 생성
+다음 항목을 확인합니다.
 
-- 단원 학습 시작 시 기본 10문제 요청
-- 문제 화면 상단에 `현재 문제/전체 문제` 표시
-- LLM이 10개 미만 반환해도 화면이 깨지지 않고 가능한 문제만 진행
-- 마지막 문제 완료 시 단원 완료 처리 및 다음 단계 잠금 해제
-
-### DB / 백엔드
-
-- `python backend/init_db.py`로 DB 초기화 가능
-- `uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000`로 서버 실행 가능
-- 서버 실행 시 DB를 매번 강제 초기화하지 않음
-- DataGrip에서 `backend/trainingo.db`를 열어 테이블 확인 가능
-
-## 개발 메모
-
-현재 CORS는 Flutter Web 개발 편의를 위해 전체 허용입니다. 운영 배포 시에는 반드시 `allow_origins`를 실제 프론트엔드 도메인으로 제한해야 합니다.
+1. PyCharm에서 백엔드 서버가 실행 중인지 확인
+2. 백엔드가 `0.0.0.0:8000`으로 실행 중인지 확인
+3. 실제 핸드폰 USB 실행이면 `adb reverse tcp:8000 tcp:8000`을 실행했는지 확인
+4. Flutter 코드의 `baseUrl`이 실행 환경에 맞는지 확인
+5. `AndroidManifest.xml`에 `android:usesCleartextTraffic="true"`가 들어갔는지 확인
