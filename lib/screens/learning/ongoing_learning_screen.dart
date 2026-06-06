@@ -23,15 +23,12 @@ class _OngoingLearningScreenState extends State<OngoingLearningScreen> {
 
   Future<void> _refresh() async {
     final user = context.read<AuthProvider>().user;
-    if (user != null) {
-      await context.read<LearningProvider>().fetchUserSessions(user.id);
-    }
+    if (user != null) await context.read<LearningProvider>().fetchUserSessions(user.id);
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<LearningProvider>();
-    final sessions = provider.userSessions;
+    final sessions = context.watch<LearningProvider>().userSessions;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
@@ -70,12 +67,12 @@ class _EmptyOngoingLearning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: EdgeInsets.all(28),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
+          children: [
             Icon(Icons.play_circle_outline_rounded, size: 76, color: Colors.grey),
             SizedBox(height: 16),
             Text('진행 중인 학습이 없습니다.', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C))),
@@ -98,18 +95,14 @@ class _SessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final subject = (session['subject'] ?? session['topic'] ?? '이름 없는 학습').toString();
     final progress = _toDouble(session['progress']).clamp(0.0, 1.0);
-    final generationMode = QuestionGenerationModeX.fromApiValue(session['generation_mode']?.toString());
-    final level = LearningLevelX.fromApiValue((session['learning_level'] ?? session['difficulty'])?.toString());
+    final generationMode = questionGenerationModeFromApiValue(session['generation_mode']?.toString());
+    final level = learningLevelFromApiValue((session['learning_level'] ?? session['difficulty'])?.toString());
     final lastStudiedAt = (session['last_studied_at'] ?? session['updated_at'] ?? session['created_at'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5E5E5), width: 2),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFE5E5E5), width: 2)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -127,23 +120,12 @@ class _SessionCard extends StatelessWidget {
           const SizedBox(height: 16),
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 12,
-              backgroundColor: const Color(0xFFE5E5E5),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF58CC02)),
-            ),
+            child: LinearProgressIndicator(value: progress, minHeight: 12, backgroundColor: const Color(0xFFE5E5E5), valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF58CC02))),
           ),
           const SizedBox(height: 8),
           Text('진행률 ${(progress * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 16),
-          DuoButton(
-            text: '이어서 학습하기',
-            icon: Icons.play_arrow_rounded,
-            color: const Color(0xFF1899D6),
-            shadowColor: const Color(0xFF147EA9),
-            onPressed: onContinue,
-          ),
+          DuoButton(text: '이어서 학습하기', icon: Icons.play_arrow_rounded, color: const Color(0xFF1899D6), shadowColor: const Color(0xFF147EA9), onPressed: onContinue),
         ],
       ),
     );
