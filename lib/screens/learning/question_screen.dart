@@ -178,6 +178,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
         children: [
           Expanded(
             child: QuestionCardDispatcher(
+              key: ValueKey('question-${questionProvider.currentIndex}-${question.id}-${question.type.name}'),
               question: question,
               selectedAnswer: questionProvider.selectedAnswer,
               isLocked: _isChecked,
