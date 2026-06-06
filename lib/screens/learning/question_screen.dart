@@ -182,7 +182,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
               selectedAnswer: questionProvider.selectedAnswer,
               isLocked: _isChecked,
               onChanged: (val) {
-                context.read<SoundService>().play(SoundEffect.click);
+                SoundService.instance.play(SoundEffect.click);
                 questionProvider.selectAnswer(val);
               },
             ),
@@ -230,7 +230,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                                 userId: user?.id ?? 1,
                                 subject: subject,
                               );
-                              context.read<SoundService>().play(isCorrect ? SoundEffect.correct : SoundEffect.wrong);
+                              SoundService.instance.play(isCorrect ? SoundEffect.correct : SoundEffect.wrong);
                               setState(() {
                                 _isAnswerCorrect = isCorrect;
                                 _isChecked = true;
@@ -247,7 +247,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       shadowColor: _isAnswerCorrect ? const Color(0xFF46A302) : const Color(0xFFFF5252),
                       onPressed: () {
                         if (questionProvider.isLastQuestion) {
-                          context.read<SoundService>().play(SoundEffect.complete);
+                          SoundService.instance.play(SoundEffect.complete);
                           context.read<LearningProvider>().completeLesson(lesson.id);
                           _goBackSafely(context);
                           return;
