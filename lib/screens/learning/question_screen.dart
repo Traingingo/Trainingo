@@ -5,8 +5,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/learning_provider.dart';
 import '../../providers/question_provider.dart';
 import '../../routes/app_routes.dart';
+import '../../services/sound_service.dart';
 import '../../widgets/common/duo_button.dart';
-import '../../widgets/question/question_card.dart';
+import '../../widgets/question/question_card_dispatcher.dart';
 
 class QuestionScreen extends StatefulWidget {
   const QuestionScreen({super.key});
@@ -50,10 +51,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
               children: [
                 const Icon(Icons.info_outline, size: 64, color: Colors.grey),
                 const SizedBox(height: 16),
-                const Text(
-                  '현재 선택된 학습 로드맵이 없습니다.',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('현재 선택된 학습 로드맵이 없습니다.', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 const Text(
                   '새로고침 또는 직접 URL 접근으로 학습 상태가 초기화되었을 수 있습니다.\n홈에서 로드맵을 다시 선택해 주세요.',
@@ -61,10 +59,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   style: TextStyle(color: Colors.grey),
                 ),
                 const SizedBox(height: 24),
-                DuoButton(
-                  text: '홈으로 이동',
-                  onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.home),
-                ),
+                DuoButton(text: '홈으로 이동', onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.home)),
               ],
             ),
           ),
@@ -96,19 +91,12 @@ class _QuestionScreenState extends State<QuestionScreen> {
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  '${lesson.title}\nAI 퀴즈 생성 중...',
+                  '${lesson.title}\nAI 맞춤 문제 생성 중...',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF3C3C3C),
-                  ),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C)),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '총 10개의 맞춤 학습 문제를 조합하고 있습니다.',
-                  style: TextStyle(color: Colors.grey),
-                ),
+                const Text('과목 성격과 레벨에 맞춰 여러 문제 유형을 조합하고 있습니다.', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),
@@ -121,10 +109,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('퀴즈 오류'),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => _goBackSafely(context),
-          ),
+          leading: IconButton(icon: const Icon(Icons.close), onPressed: () => _goBackSafely(context)),
         ),
         body: Center(
           child: Padding(
@@ -144,9 +129,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       );
     }
 
-    final progress = questionProvider.questions.isEmpty
-        ? 0.0
-        : (questionProvider.currentIndex + 1) / questionProvider.questions.length;
+    final progress = questionProvider.questions.isEmpty ? 0.0 : (questionProvider.currentIndex + 1) / questionProvider.questions.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
@@ -194,10 +177,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
       body: Column(
         children: [
           Expanded(
-            child: QuestionCard(
+            child: QuestionCardDispatcher(
               question: question,
               selectedAnswer: questionProvider.selectedAnswer,
-              onSelected: _isChecked ? (_) {} : (val) => questionProvider.selectAnswer(val),
+              isLocked: _isChecked,
+              onChanged: (val) {
+                context.read<SoundService>().play(SoundEffect.click);
+                questionProvider.selectAnswer(val);
+              },
             ),
           ),
           AnimatedContainer(
@@ -239,11 +226,13 @@ class _QuestionScreenState extends State<QuestionScreen> {
                           : () {
                               final user = context.read<AuthProvider>().user;
                               final subject = learningProvider.currentSubject;
+                              final isCorrect = questionProvider.checkAnswer(
+                                userId: user?.id ?? 1,
+                                subject: subject,
+                              );
+                              context.read<SoundService>().play(isCorrect ? SoundEffect.correct : SoundEffect.wrong);
                               setState(() {
-                                _isAnswerCorrect = questionProvider.checkAnswer(
-                                  userId: user?.id ?? 1,
-                                  subject: subject,
-                                );
+                                _isAnswerCorrect = isCorrect;
                                 _isChecked = true;
                               });
                               if (questionProvider.hearts <= 0) {
@@ -258,7 +247,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       shadowColor: _isAnswerCorrect ? const Color(0xFF46A302) : const Color(0xFFFF5252),
                       onPressed: () {
                         if (questionProvider.isLastQuestion) {
-                          questionProvider.playVictorySound();
+                          context.read<SoundService>().play(SoundEffect.complete);
                           context.read<LearningProvider>().completeLesson(lesson.id);
                           _goBackSafely(context);
                           return;
@@ -305,7 +294,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('💔 하트 소진!', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('하트 소진!', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('하트를 모두 소진했습니다. 단원 목록으로 돌아가서 다시 시도해 주세요!'),
         actions: [
           TextButton(
@@ -344,10 +333,7 @@ class _FeedbackSummary extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isCorrect ? const Color(0xFF58CC02) : Colors.redAccent,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: isCorrect ? const Color(0xFF58CC02) : Colors.redAccent, shape: BoxShape.circle),
               child: Icon(isCorrect ? Icons.check : Icons.close, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
