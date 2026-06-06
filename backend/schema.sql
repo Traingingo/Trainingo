@@ -88,8 +88,11 @@ CREATE TABLE IF NOT EXISTS study_calendar (
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
+-- 중요: 기존 DB에는 last_studied_at 컬럼이 아직 없을 수 있습니다.
+-- init_db.py 실행 시 schema.sql이 먼저 실행되고 그 다음 database.py의 마이그레이션이 컬럼을 추가합니다.
+-- 따라서 이 인덱스는 기존 DB에도 항상 존재하는 updated_at 기준으로 생성합니다.
 CREATE INDEX IF NOT EXISTS idx_study_sessions_user_recent
-ON study_sessions(user_id, last_studied_at DESC, updated_at DESC);
+ON study_sessions(user_id, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_lessons_session_level
 ON lessons(session_id, level);
