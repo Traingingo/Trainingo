@@ -178,6 +178,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
         children: [
           Expanded(
             child: QuestionCardDispatcher(
+              key: ValueKey('question-${questionProvider.currentIndex}-${question.id}-${question.type.name}'),
               question: question,
               selectedAnswer: questionProvider.selectedAnswer,
               isLocked: _isChecked,
@@ -211,8 +212,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   if (_isChecked) ...[
                     _FeedbackSummary(
                       isCorrect: _isAnswerCorrect,
-                      answer: question.answer,
+                      answer: question.displayAnswer,
+                      userAnswer: questionProvider.selectedAnswer ?? '',
                       explanation: question.explanation,
+                      gradingFeedback: questionProvider.lastGradeResult?.feedback,
                     ),
                     const SizedBox(height: 20),
                   ],
@@ -313,18 +316,24 @@ class _QuestionScreenState extends State<QuestionScreen> {
 class _FeedbackSummary extends StatelessWidget {
   final bool isCorrect;
   final String answer;
+  final String userAnswer;
   final String explanation;
+  final String? gradingFeedback;
 
   const _FeedbackSummary({
     required this.isCorrect,
     required this.answer,
+    required this.userAnswer,
     required this.explanation,
+    this.gradingFeedback,
   });
 
   @override
   Widget build(BuildContext context) {
     final Color primaryColor = isCorrect ? const Color(0xFF46A302) : Colors.red.shade900;
     final Color detailColor = isCorrect ? const Color(0xFF3F8A00) : Colors.red.shade700;
+    final cleanedAnswer = answer.trim().isEmpty ? '모범답안이 제공되지 않았습니다.' : answer.trim();
+    final cleanedUserAnswer = userAnswer.trim().isEmpty ? '입력한 답안이 없습니다.' : userAnswer.trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,10 +356,18 @@ class _FeedbackSummary extends StatelessWidget {
         ),
         if (!isCorrect) ...[
           const SizedBox(height: 12),
-          Text('올바른 정답: $answer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+          Text('내 답안: $cleanedUserAnswer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+          const SizedBox(height: 4),
+          Text('올바른 정답: $cleanedAnswer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
         ],
-        const SizedBox(height: 8),
-        Text(explanation, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: detailColor)),
+        if ((gradingFeedback ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(gradingFeedback!, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: detailColor)),
+        ],
+        if (explanation.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(explanation, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: detailColor)),
+        ],
       ],
     );
   }

@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../models/question_generation_config.dart';
 import '../models/question_model.dart';
-import '../models/question_type.dart';
+import '../services/answer_grading_service.dart';
 import '../services/question_service.dart';
 
 class QuestionProvider extends ChangeNotifier {
   final QuestionService _questionService = QuestionService();
+  final AnswerGradingService _answerGradingService = AnswerGradingService();
 
   List<QuestionModel> questions = [];
   int currentIndex = 0;
   int score = 0;
   bool isLoading = false;
   String? selectedAnswer;
+  AnswerGradeResult? lastGradeResult;
 
   int hearts = 3;
   final int maxHearts = 3;
@@ -38,6 +40,7 @@ class QuestionProvider extends ChangeNotifier {
     currentIndex = 0;
     score = 0;
     selectedAnswer = null;
+    lastGradeResult = null;
     hearts = maxHearts;
     notifyListeners();
 
@@ -63,9 +66,12 @@ class QuestionProvider extends ChangeNotifier {
     final question = currentQuestion;
     if (question == null || selectedAnswer == null) return false;
 
-    final userAnswer = selectedAnswer!.trim();
-    final correctAnswer = question.answer.trim();
-    final isCorrect = _isCorrectAnswer(question, userAnswer, correctAnswer);
+    final gradeResult = _answerGradingService.grade(
+      question: question,
+      userAnswer: selectedAnswer!,
+    );
+    final isCorrect = gradeResult.isCorrect;
+    lastGradeResult = gradeResult;
 
     if (isCorrect) {
       score++;
@@ -76,7 +82,7 @@ class QuestionProvider extends ChangeNotifier {
         subject: subject,
         question: question.question,
         options: question.options,
-        answer: question.answer,
+        answer: question.displayAnswer,
         explanation: question.explanation,
         userAnswer: selectedAnswer!,
       );
@@ -86,28 +92,11 @@ class QuestionProvider extends ChangeNotifier {
     return isCorrect;
   }
 
-  bool _isCorrectAnswer(QuestionModel question, String userAnswer, String correctAnswer) {
-    final normalizedUser = userAnswer.toLowerCase().replaceAll(' ', '');
-    final normalizedCorrect = correctAnswer.toLowerCase().replaceAll(' ', '');
-
-    switch (question.type) {
-      case QuestionType.multipleChoice:
-      case QuestionType.shortAnswer:
-      case QuestionType.calculation:
-      case QuestionType.codeReading:
-        return normalizedUser == normalizedCorrect;
-      case QuestionType.descriptive:
-      case QuestionType.coding:
-      case QuestionType.sqlWriting:
-      case QuestionType.commandWriting:
-        return normalizedUser == normalizedCorrect;
-    }
-  }
-
   void nextQuestion() {
     if (!isLastQuestion) {
       currentIndex++;
       selectedAnswer = null;
+      lastGradeResult = null;
       notifyListeners();
     }
   }

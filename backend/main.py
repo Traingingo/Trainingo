@@ -228,6 +228,121 @@ def build_type_counts(weights: Dict[str, int], total_count: int) -> Dict[str, in
     return {item["type"]: item["count"] for item in raw if item["count"] > 0}
 
 
+def ensure_list(value) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def first_non_empty(*values) -> str:
+    for value in values:
+        text = str(value).strip() if value is not None else ""
+        if text:
+            return text
+    return ""
+
+
+def build_fallback_model_answer(question_text: str, answer: str = "") -> str:
+    if answer:
+        return answer
+    return f"이 문제는 '{question_text}'에 대해 핵심 개념과 이유를 간단히 설명하는 답안을 요구합니다."
+
+
+def normalize_short_answer_question(q: dict) -> dict:
+    answer = first_non_empty(q.get("answer"), q.get("expected_answer"), q.get("model_answer"))
+    if not answer:
+        answer = "핵심 개념"
+
+    acceptable_answers = ensure_list(q.get("acceptable_answers") or q.get("acceptableAnswers"))
+    acceptable_answers = list(dict.fromkeys([answer, *acceptable_answers]))
+
+    q["answer"] = answer
+    q["acceptable_answers"] = acceptable_answers
+    q["options"] = []
+    q["model_answer"] = ""
+    q["sample_answer"] = ""
+    q["expected_answer"] = answer
+    q["keywords"] = ensure_list(q.get("keywords"))
+    q["grading_criteria"] = first_non_empty(
+        q.get("grading_criteria"),
+        q.get("gradingCriteria"),
+        "띄어쓰기, 대소문자, 조사 차이와 허용 답안 목록의 동의어는 정답으로 인정합니다.",
+    )
+    return q
+
+
+def normalize_descriptive_question(q: dict) -> dict:
+    answer = first_non_empty(
+        q.get("model_answer"),
+        q.get("modelAnswer"),
+        q.get("sample_answer"),
+        q.get("sampleAnswer"),
+        q.get("expected_answer"),
+        q.get("expectedAnswer"),
+        q.get("answer"),
+    )
+    answer = build_fallback_model_answer(q.get("question", "서술형 문제"), answer)
+
+    keywords = ensure_list(q.get("keywords"))
+    if not keywords:
+        keywords = ensure_list(q.get("rubric"))[:4]
+
+    grading_criteria = first_non_empty(
+        q.get("grading_criteria"),
+        q.get("gradingCriteria"),
+        "핵심 키워드와 의미가 포함되어 있으면 부분 정답 이상으로 인정합니다.",
+    )
+
+    q["answer"] = answer
+    q["model_answer"] = answer
+    q["sample_answer"] = answer
+    q["expected_answer"] = answer
+    q["keywords"] = keywords
+    q["grading_criteria"] = grading_criteria
+    q["rubric"] = ensure_list(q.get("rubric")) or keywords
+    q["options"] = []
+    return q
+
+
+def normalize_generated_question(q: dict, q_type: str, request: QuestionRequest, source_text: Optional[str]) -> dict:
+    if q_type == "short_answer":
+        q = normalize_short_answer_question(q)
+    elif q_type == "descriptive":
+        q = normalize_descriptive_question(q)
+    elif q_type != "multiple_choice":
+        q["options"] = []
+        q["answer"] = first_non_empty(q.get("answer"), q.get("expected_answer"), q.get("model_answer"))
+        q["acceptable_answers"] = ensure_list(q.get("acceptable_answers") or q.get("acceptableAnswers"))
+        q["keywords"] = ensure_list(q.get("keywords"))
+        q["grading_criteria"] = first_non_empty(q.get("grading_criteria"), q.get("gradingCriteria"))
+
+    return {
+        "id": 0,
+        "type": q_type,
+        "question": q.get("question", "문제를 생성하지 못했습니다."),
+        "options": q.get("options", []),
+        "answer": q.get("answer", ""),
+        "acceptable_answers": ensure_list(q.get("acceptable_answers") or q.get("acceptableAnswers")),
+        "explanation": q.get("explanation", "해설이 제공되지 않았습니다."),
+        "source_type": "Document" if source_text else "AI",
+        "difficulty": request.difficulty,
+        "code": q.get("code", ""),
+        "language": q.get("language", ""),
+        "starter_code": q.get("starter_code", ""),
+        "test_cases": q.get("test_cases", []),
+        "rubric": ensure_list(q.get("rubric")),
+        "expected_format": q.get("expected_format", ""),
+        "model_answer": q.get("model_answer", ""),
+        "sample_answer": q.get("sample_answer", ""),
+        "expected_answer": q.get("expected_answer", ""),
+        "keywords": ensure_list(q.get("keywords")),
+        "grading_criteria": q.get("grading_criteria", ""),
+    }
+
+
 def build_question_prompt(request: QuestionRequest, source_text: Optional[str], type_counts: Dict[str, int]) -> str:
     context_str = f"학습 단원은 '{request.level_title}' ({request.level_description}) 입니다." if request.level_title else ""
     if source_text:
@@ -275,26 +390,59 @@ def build_question_prompt(request: QuestionRequest, source_text: Optional[str], 
     6. programming 과목은 code_reading 또는 coding 문제를 사용할 수 있습니다.
     7. 객관식 문제만 options를 4개 제공합니다.
     8. 단답형, 서술형, 코딩형, SQL 작성형, 계산형의 options는 빈 배열로 둡니다.
-    9. 서술형 문제에는 rubric을 2~4개 제공합니다.
-    10. 코딩형/SQL 작성형 문제에는 starter_code 또는 test_cases를 가능한 경우 제공합니다.
-    11. 반드시 JSON object만 반환하세요. JSON 밖에는 아무 문장도 쓰지 마세요.
+    9. 단답형(short_answer)은 반드시 한 단어 또는 짧은 구문으로 답할 수 있게 만드세요.
+       - 긴 설명을 요구하는 문제는 short_answer가 아니라 descriptive로 분류하세요.
+       - 빈칸 채우기, 용어 맞히기, 개념명 맞히기, 간단한 결과값 입력, 짧은 정의의 핵심 단어 입력 위주로 만드세요.
+       - "설명하시오", "서술하시오", "비교하시오"처럼 긴 문장을 요구하는 단답형 문제는 금지합니다.
+       - short_answer에는 answer와 acceptable_answers를 반드시 넣으세요.
+    10. 서술형(descriptive)은 model_answer, sample_answer, expected_answer 중 최소 하나를 반드시 채우고,
+        keywords와 grading_criteria를 반드시 제공합니다.
+    11. 서술형 문제에는 rubric을 2~4개 제공합니다.
+    12. 코딩형/SQL 작성형 문제에는 starter_code 또는 test_cases를 가능한 경우 제공합니다.
+    13. 반드시 JSON object만 반환하세요. JSON 밖에는 아무 문장도 쓰지 마세요.
 
     [반환 JSON 형식]
     {{
       "questions": [
         {{
           "id": 1,
-          "type": "multiple_choice",
-          "question": "문제 내용",
-          "options": ["보기1", "보기2", "보기3", "보기4"],
-          "answer": "정답",
-          "explanation": "해설",
+          "type": "short_answer",
+          "question": "객체지향 프로그래밍의 4대 특징 중 내부 구현을 숨기고 필요한 기능만 제공하는 개념은?",
+          "options": [],
+          "answer": "캡슐화",
+          "acceptable_answers": ["캡슐화", "encapsulation"],
+          "explanation": "캡슐화는 내부 구현을 숨기고 외부에는 필요한 기능만 제공하는 객체지향 개념입니다.",
+          "model_answer": "",
+          "sample_answer": "",
+          "expected_answer": "캡슐화",
+          "keywords": [],
+          "grading_criteria": "허용 답안 중 하나와 의미가 같으면 정답으로 인정합니다.",
           "code": "",
           "language": "",
           "starter_code": "",
           "test_cases": [],
           "rubric": [],
-          "expected_format": ""
+          "expected_format": "한 단어 또는 짧은 구문"
+        }},
+        {{
+          "id": 2,
+          "type": "descriptive",
+          "question": "데이터베이스에서 정규화를 사용하는 이유를 설명하시오.",
+          "options": [],
+          "answer": "정규화는 데이터 중복을 줄이고 삽입, 삭제, 수정 이상을 방지하여 데이터의 일관성과 무결성을 높이기 위해 사용한다.",
+          "acceptable_answers": [],
+          "explanation": "정규화의 핵심 목적은 중복 감소와 이상 현상 방지입니다.",
+          "model_answer": "정규화는 데이터 중복을 줄이고 삽입, 삭제, 수정 이상을 방지하여 데이터의 일관성과 무결성을 높이기 위해 사용한다.",
+          "sample_answer": "정규화는 데이터 중복을 줄이고 이상 현상을 방지하기 위해 사용한다.",
+          "expected_answer": "데이터 중복 감소와 이상 현상 방지 목적을 설명한다.",
+          "keywords": ["데이터 중복", "이상 현상", "무결성", "일관성"],
+          "grading_criteria": "데이터 중복 감소와 이상 현상 방지 목적을 설명하면 정답 또는 부분 정답으로 인정한다.",
+          "code": "",
+          "language": "",
+          "starter_code": "",
+          "test_cases": [],
+          "rubric": ["데이터 중복 감소", "이상 현상 방지", "일관성 또는 무결성 언급"],
+          "expected_format": "2~4문장"
         }}
       ]
     }}
@@ -416,26 +564,11 @@ async def generate_questions(request: QuestionRequest):
                 if not isinstance(options, list) or len(options) < 2:
                     continue
             else:
-                options = []
+                q["options"] = []
 
-            final_questions.append(
-                {
-                    "id": len(final_questions) + 1,
-                    "type": q_type,
-                    "question": q.get("question", "문제를 생성하지 못했습니다."),
-                    "options": options,
-                    "answer": q.get("answer", ""),
-                    "explanation": q.get("explanation", "해설이 제공되지 않았습니다."),
-                    "source_type": "Document" if source_text else "AI",
-                    "difficulty": request.difficulty,
-                    "code": q.get("code", ""),
-                    "language": q.get("language", ""),
-                    "starter_code": q.get("starter_code", ""),
-                    "test_cases": q.get("test_cases", []),
-                    "rubric": q.get("rubric", []),
-                    "expected_format": q.get("expected_format", ""),
-                }
-            )
+            normalized_question = normalize_generated_question(q, q_type, request, source_text)
+            normalized_question["id"] = len(final_questions) + 1
+            final_questions.append(normalized_question)
 
         actual_count = len(final_questions)
         if actual_count < request.count:

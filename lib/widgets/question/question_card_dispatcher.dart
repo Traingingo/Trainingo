@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/question_model.dart';
 import '../../models/question_type.dart';
+import 'resettable_answer_text_field.dart';
 
 class QuestionCardDispatcher extends StatelessWidget {
   final QuestionModel question;
@@ -17,6 +18,8 @@ class QuestionCardDispatcher extends StatelessWidget {
     this.isLocked = false,
   });
 
+  String get _resetKey => '${question.id}-${question.type.name}-${question.question.hashCode}';
+
   @override
   Widget build(BuildContext context) {
     switch (question.type) {
@@ -29,6 +32,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.shortAnswer:
         return _TextQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -38,6 +42,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.descriptive:
         return _TextQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -47,6 +52,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.codeReading:
         return _CodeLikeQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -55,6 +61,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.coding:
         return _CodeLikeQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -64,6 +71,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.sqlWriting:
         return _CodeLikeQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -73,6 +81,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.commandWriting:
         return _CodeLikeQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -82,6 +91,7 @@ class QuestionCardDispatcher extends StatelessWidget {
         );
       case QuestionType.calculation:
         return _TextQuestionCard(
+          resetKey: _resetKey,
           question: question,
           selectedAnswer: selectedAnswer,
           onChanged: onChanged,
@@ -118,7 +128,6 @@ class _MultipleChoiceQuestionCard extends StatelessWidget {
           ...List.generate(question.options.length, (index) {
             final option = question.options[index];
             final isSelected = selectedAnswer == option;
-
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: GestureDetector(
@@ -188,6 +197,7 @@ class _MultipleChoiceQuestionCard extends StatelessWidget {
 }
 
 class _TextQuestionCard extends StatelessWidget {
+  final String resetKey;
   final QuestionModel question;
   final String? selectedAnswer;
   final ValueChanged<String> onChanged;
@@ -196,6 +206,7 @@ class _TextQuestionCard extends StatelessWidget {
   final String hintText;
 
   const _TextQuestionCard({
+    required this.resetKey,
     required this.question,
     required this.selectedAnswer,
     required this.onChanged,
@@ -213,24 +224,13 @@ class _TextQuestionCard extends StatelessWidget {
         children: [
           _QuestionHeader(question: question),
           const SizedBox(height: 24),
-          TextField(
+          ResettableAnswerTextField(
+            resetKey: resetKey,
+            value: selectedAnswer,
             enabled: !isLocked,
             maxLines: maxLines,
+            hintText: hintText,
             onChanged: onChanged,
-            decoration: InputDecoration(
-              hintText: hintText,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Color(0xFFE5E5E5), width: 2),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Color(0xFF1899D6), width: 2),
-              ),
-            ),
           ),
           if (question.rubric.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -243,6 +243,7 @@ class _TextQuestionCard extends StatelessWidget {
 }
 
 class _CodeLikeQuestionCard extends StatelessWidget {
+  final String resetKey;
   final QuestionModel question;
   final String? selectedAnswer;
   final ValueChanged<String> onChanged;
@@ -251,6 +252,7 @@ class _CodeLikeQuestionCard extends StatelessWidget {
   final int maxLines;
 
   const _CodeLikeQuestionCard({
+    required this.resetKey,
     required this.question,
     required this.selectedAnswer,
     required this.onChanged,
@@ -276,25 +278,14 @@ class _CodeLikeQuestionCard extends StatelessWidget {
             _CodeBlock(text: question.starterCode!),
           ],
           const SizedBox(height: 18),
-          TextField(
+          ResettableAnswerTextField(
+            resetKey: resetKey,
+            value: selectedAnswer,
             enabled: !isLocked,
             maxLines: maxLines,
-            onChanged: onChanged,
+            hintText: hintText,
             style: const TextStyle(fontFamily: 'monospace'),
-            decoration: InputDecoration(
-              hintText: hintText,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Color(0xFFE5E5E5), width: 2),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Color(0xFF1899D6), width: 2),
-              ),
-            ),
+            onChanged: onChanged,
           ),
         ],
       ),
@@ -304,13 +295,11 @@ class _CodeLikeQuestionCard extends StatelessWidget {
 
 class _QuestionHeader extends StatelessWidget {
   final QuestionModel question;
-
   const _QuestionHeader({required this.question});
 
   @override
   Widget build(BuildContext context) {
     final parts = _QuestionTextParser.parse(question.question);
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -382,7 +371,6 @@ class _QuestionHeader extends StatelessWidget {
 class _QuestionTextParts {
   final String prompt;
   final List<String> codeBlocks;
-
   const _QuestionTextParts({required this.prompt, required this.codeBlocks});
 }
 
@@ -408,7 +396,6 @@ class _QuestionTextParser {
     final lines = text.split('\n');
     final promptLines = <String>[];
     final codeLines = <String>[];
-
     for (final line in lines) {
       if (_looksLikeCode(line)) {
         codeLines.add(line);
@@ -421,21 +408,16 @@ class _QuestionTextParser {
       codeBlocks.add(codeLines.join('\n').trim());
       prompt = promptLines.join('\n').trim();
     }
-
     return _QuestionTextParts(prompt: _cleanupPrompt(prompt), codeBlocks: codeBlocks);
   }
 
   static String _cleanupPrompt(String value) {
-    return value
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .replaceAll(RegExp(r'\s+$', multiLine: true), '')
-        .trim();
+    return value.replaceAll(RegExp(r'\n{3,}'), '\n\n').replaceAll(RegExp(r'\s+$', multiLine: true), '').trim();
   }
 
   static bool _looksLikeCode(String line) {
     final trimmed = line.trim();
     if (trimmed.isEmpty) return false;
-
     final lower = trimmed.toLowerCase();
     return lower.startsWith('#include') ||
         lower.startsWith('import ') ||
@@ -467,7 +449,6 @@ class _QuestionTextParser {
 
 class _CodeBlock extends StatelessWidget {
   final String text;
-
   const _CodeBlock({required this.text});
 
   @override
@@ -492,7 +473,6 @@ class _CodeBlock extends StatelessWidget {
 
 class _RubricBox extends StatelessWidget {
   final List<String> rubric;
-
   const _RubricBox({required this.rubric});
 
   @override
