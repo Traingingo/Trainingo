@@ -2,19 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/learning_provider.dart';
+import '../../providers/question_provider.dart';
 import '../../routes/app_routes.dart';
 import '../../widgets/common/duo_button.dart';
-import 'question_mode_selection_screen.dart';
 
 class LessonListScreen extends StatelessWidget {
   const LessonListScreen({super.key});
 
-  void _goBackSafely(BuildContext context) {
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context);
-    } else {
-      Navigator.pushReplacementNamed(context, AppRoutes.home);
-    }
+  void _startLesson(BuildContext context, dynamic lesson, String subject) {
+    final learningProvider = context.read<LearningProvider>();
+    final config = learningProvider.buildQuestionConfigForLevel(lesson.level);
+
+    context.read<QuestionProvider>().generateQuestions(
+          subject: subject,
+          difficulty: '초급',
+          config: config,
+          sessionId: learningProvider.currentSessionId,
+          levelTitle: lesson.title,
+          levelDescription: lesson.description,
+        );
+
+    Navigator.pushNamed(context, AppRoutes.questions, arguments: lesson.id);
   }
 
   void _showLessonDetailBottomSheet(BuildContext context, dynamic lesson, String subject) {
@@ -26,89 +34,38 @@ class LessonListScreen extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(32),
+              topRight: Radius.circular(32),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(color: const Color(0xFFE5E5E5), borderRadius: BorderRadius.circular(10)),
+              Text(
+                lesson.title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF3C3C3C),
                 ),
               ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: lesson.isCompleted ? const Color(0xFFFFC800).withOpacity(0.1) : const Color(0xFF1899D6).withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      lesson.isCompleted ? Icons.emoji_events : Icons.menu_book,
-                      color: lesson.isCompleted ? const Color(0xFFFFC800) : const Color(0xFF1899D6),
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lesson.title,
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C)),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'AI 맞춤 문제 10개 출제',
-                          style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FA),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE5E5E5), width: 1.5),
-                ),
-                child: Text(
-                  lesson.description,
-                  style: const TextStyle(fontSize: 15, color: Color(0xFF4B4B4B), height: 1.4),
-                ),
+              const SizedBox(height: 12),
+              Text(
+                lesson.description,
+                style: const TextStyle(fontSize: 15, color: Color(0xFF4B4B4B), height: 1.4),
               ),
               const SizedBox(height: 24),
               DuoButton(
                 text: lesson.isCompleted ? '다시 학습하기' : '학습 시작하기',
                 color: const Color(0xFF58CC02),
                 shadowColor: const Color(0xFF46A302),
-                onPressed: () async {
+                onPressed: () {
                   Navigator.pop(bottomSheetContext);
-                  final learningProvider = context.read<LearningProvider>();
-
-                  if (!context.mounted) return;
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => QuestionModeSelectionSheet(
-                      subject: subject,
-                      lesson: lesson,
-                      sessionId: learningProvider.currentSessionId,
-                    ),
-                  );
+                  _startLesson(context, lesson, subject);
                 },
               ),
-              const SizedBox(height: 8),
             ],
           ),
         );
@@ -134,39 +91,16 @@ class LessonListScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        shadowColor: const Color(0xFFE5E5E5),
         title: Text(
           subject.isNotEmpty ? '$subject 학습 경로' : '단계별 학습',
           style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C), fontSize: 18),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF3C3C3C)),
-          onPressed: () => _goBackSafely(context),
-        ),
       ),
       body: lessons.isEmpty
           ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.info_outline, size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '생성된 커리큘럼이 없습니다.',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '홈 화면에서 새로운 학습 주제를 입력하거나\n진행 중인 학습 코스를 선택해 주세요.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 24),
-                    DuoButton(text: '홈으로 이동', onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.home)),
-                  ],
-                ),
+              child: DuoButton(
+                text: '홈으로 이동',
+                onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.home),
               ),
             )
           : ListView.builder(
@@ -188,7 +122,7 @@ class LessonListScreen extends StatelessWidget {
                             onTap: lesson.isLocked
                                 ? () {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('이전 레벨을 완료해야 잠금이 해제됩니다!'), backgroundColor: Color(0xFF3C3C3C)),
+                                      const SnackBar(content: Text('이전 레벨을 완료해야 잠금이 해제됩니다!')),
                                     );
                                   }
                                 : () => _showLessonDetailBottomSheet(context, lesson, subject),
@@ -228,20 +162,12 @@ class LessonListScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE5E5E5), width: 1.5),
-                            ),
-                            child: Text(
-                              lesson.title,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: lesson.isLocked ? Colors.grey : const Color(0xFF3C3C3C),
-                              ),
+                          Text(
+                            lesson.title,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: lesson.isLocked ? Colors.grey : const Color(0xFF3C3C3C),
                             ),
                           ),
                         ],
@@ -254,7 +180,10 @@ class LessonListScreen extends StatelessWidget {
                         child: Container(
                           width: 8,
                           height: 48,
-                          decoration: BoxDecoration(color: const Color(0xFFE5E5E5), borderRadius: BorderRadius.circular(4)),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE5E5E5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
