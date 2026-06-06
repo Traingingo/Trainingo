@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../models/learning_mode.dart';
 import '../models/lesson_model.dart';
+import '../models/question_generation_config.dart';
+import '../services/question_policy_service.dart';
 import '../services/question_service.dart';
 
 class LearningProvider extends ChangeNotifier {
@@ -10,14 +13,42 @@ class LearningProvider extends ChangeNotifier {
   String currentSubject = "";
   int currentSessionId = 0;
   bool isLoading = false;
+  LearningMode selectedLearningMode = LearningMode.recommended;
 
-  // 사용자의 전체 학습 세션 목록 (이어서 학습하기/자료 추가용)
   List<Map<String, dynamic>> userSessions = [];
 
   double get progress {
     if (lessons.isEmpty) return 0.0;
     final completed = lessons.where((lesson) => lesson.isCompleted).length;
     return completed / lessons.length;
+  }
+
+  void setSelectedLearningMode(LearningMode mode) {
+    selectedLearningMode = mode;
+    notifyListeners();
+  }
+
+  QuestionGenerationConfig buildQuestionConfigForLevel(int level, {int count = 10}) {
+    final subjectType = SubjectClassifier.classify(subject: currentSubject);
+    final allowedTypes = SubjectQuestionPolicy.allowedTypes(
+      subjectType,
+      subjectName: currentSubject,
+    );
+    final weights = LearningModePlanner.buildWeights(
+      mode: selectedLearningMode,
+      level: level,
+      subjectType: subjectType,
+      subjectName: currentSubject,
+    );
+
+    return QuestionGenerationConfig(
+      mode: selectedLearningMode,
+      subjectType: subjectType,
+      allowedTypes: allowedTypes,
+      weights: weights,
+      level: level,
+      count: count,
+    );
   }
 
   double _toDouble(dynamic value) {
@@ -53,7 +84,6 @@ class LearningProvider extends ChangeNotifier {
     return [];
   }
 
-  // 커리큘럼 생성 및 신규 세션 등록
   Future<void> generateCurriculum(String subject, int userId) async {
     isLoading = true;
     notifyListeners();
@@ -69,7 +99,7 @@ class LearningProvider extends ChangeNotifier {
       lessons = _parseLessons(result["lessons"]);
       await fetchUserSessions(userId);
     } catch (e) {
-      print("❌ 커리큘럼 생성 실패: $e");
+      print("커리큘럼 생성 실패: $e");
       rethrow;
     } finally {
       isLoading = false;
@@ -77,25 +107,24 @@ class LearningProvider extends ChangeNotifier {
     }
   }
 
-  // 사용자 학습 세션 목록 불러오기
   Future<void> fetchUserSessions(int userId) async {
     final list = await _questionService.fetchUserSessions(userId);
     userSessions = list;
     notifyListeners();
   }
 
-  // 기존 세션 이어서 학습하기 활성화
   void loadSession(Map<String, dynamic> session) {
     currentSessionId = _toInt(session["id"]);
     currentSubject = session["subject"]?.toString() ?? "";
+    selectedLearningMode = LearningMode.recommended;
     lessons = _parseLessons(session["lessons"]);
     notifyListeners();
   }
 
-  // 업로드 API 응답으로 현재 학습 세션 활성화
   void loadSessionFromUploadResponse(Map<String, dynamic> response) {
     currentSessionId = _toInt(response["session_id"]);
     currentSubject = response["subject"]?.toString() ?? "";
+    selectedLearningMode = LearningMode.recommended;
     lessons = _parseLessons(response["curriculum"]);
 
     final double uploadedProgress = _toDouble(response["progress"]);
@@ -128,7 +157,6 @@ class LearningProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 단원(레벨) 완료 처리 및 DB 반영
   Future<void> completeLesson(int lessonId) async {
     LessonModel? completedLesson;
     for (final lesson in lessons) {
@@ -151,7 +179,6 @@ class LearningProvider extends ChangeNotifier {
         );
       }
 
-      // 다음 레벨 해제: DB lesson id가 연속이라는 가정 대신 level 기준으로 처리
       if (nextLevel != null && lesson.level == nextLevel) {
         return LessonModel(
           id: lesson.id,

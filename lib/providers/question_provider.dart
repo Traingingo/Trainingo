@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 
+import '../models/question_generation_config.dart';
 import '../models/question_model.dart';
+import '../models/question_type.dart';
 import '../services/question_service.dart';
 
 class QuestionProvider extends ChangeNotifier {
   final QuestionService _questionService = QuestionService();
-  final AudioPlayer _audioPlayer = AudioPlayer();
 
   List<QuestionModel> questions = [];
   int currentIndex = 0;
@@ -14,7 +14,6 @@ class QuestionProvider extends ChangeNotifier {
   bool isLoading = false;
   String? selectedAnswer;
 
-  // 하트(생명) 상태
   int hearts = 3;
   final int maxHearts = 3;
 
@@ -27,32 +26,10 @@ class QuestionProvider extends ChangeNotifier {
     return currentIndex == questions.length - 1;
   }
 
-  // 비동기 사운드 재생 헬퍼
-  Future<void> _playAudio(String url) async {
-    try {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(url));
-    } catch (e) {
-      print("🔊 오디오 재생 에러: $e");
-    }
-  }
-
-  void playCorrectSound() {
-    _playAudio('https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav');
-  }
-
-  void playIncorrectSound() {
-    _playAudio('https://assets.mixkit.co/active_storage/sfx/2873/2873-84.wav');
-  }
-
-  void playVictorySound() {
-    _playAudio('https://assets.mixkit.co/active_storage/sfx/2019/2019-84.wav');
-  }
-
   Future<void> generateQuestions({
     required String subject,
     required String difficulty,
-    required String type,
+    required QuestionGenerationConfig config,
     int sessionId = 0,
     String levelTitle = "",
     String levelDescription = "",
@@ -61,13 +38,13 @@ class QuestionProvider extends ChangeNotifier {
     currentIndex = 0;
     score = 0;
     selectedAnswer = null;
-    hearts = maxHearts; // 하트 충전
+    hearts = maxHearts;
     notifyListeners();
 
     questions = await _questionService.generateQuestions(
       subject: subject,
       difficulty: difficulty,
-      type: type,
+      config: config,
       sessionId: sessionId,
       levelTitle: levelTitle,
       levelDescription: levelDescription,
@@ -86,15 +63,14 @@ class QuestionProvider extends ChangeNotifier {
     final question = currentQuestion;
     if (question == null || selectedAnswer == null) return false;
 
-    final isCorrect = selectedAnswer == question.answer;
+    final userAnswer = selectedAnswer!.trim();
+    final correctAnswer = question.answer.trim();
+    final isCorrect = _isCorrectAnswer(question, userAnswer, correctAnswer);
+
     if (isCorrect) {
       score++;
-      playCorrectSound();
     } else {
-      hearts--; // 틀리면 하트 깎임!
-      playIncorrectSound();
-
-      // 백엔드 DB 오답노트에 비동기로 저장
+      hearts--;
       _questionService.saveIncorrectAnswer(
         userId: userId,
         subject: subject,
@@ -110,17 +86,29 @@ class QuestionProvider extends ChangeNotifier {
     return isCorrect;
   }
 
+  bool _isCorrectAnswer(QuestionModel question, String userAnswer, String correctAnswer) {
+    final normalizedUser = userAnswer.toLowerCase().replaceAll(' ', '');
+    final normalizedCorrect = correctAnswer.toLowerCase().replaceAll(' ', '');
+
+    switch (question.type) {
+      case QuestionType.multipleChoice:
+      case QuestionType.shortAnswer:
+      case QuestionType.calculation:
+      case QuestionType.codeReading:
+        return normalizedUser == normalizedCorrect;
+      case QuestionType.descriptive:
+      case QuestionType.coding:
+      case QuestionType.sqlWriting:
+      case QuestionType.commandWriting:
+        return normalizedUser == normalizedCorrect;
+    }
+  }
+
   void nextQuestion() {
     if (!isLastQuestion) {
       currentIndex++;
       selectedAnswer = null;
       notifyListeners();
     }
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
   }
 }
