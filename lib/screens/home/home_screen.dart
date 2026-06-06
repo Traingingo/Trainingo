@@ -220,8 +220,8 @@ class _RecentSessionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final subject = (session['subject'] ?? session['topic'] ?? '이름 없는 학습').toString();
     final progress = _toDouble(session['progress']).clamp(0.0, 1.0);
-    final mode = QuestionGenerationModeX.fromApiValue(session['generation_mode']?.toString());
-    final level = LearningLevelX.fromApiValue((session['learning_level'] ?? session['difficulty'])?.toString());
+    final mode = questionGenerationModeFromApiValue(session['generation_mode']?.toString());
+    final level = learningLevelFromApiValue((session['learning_level'] ?? session['difficulty'])?.toString());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
