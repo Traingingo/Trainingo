@@ -6,6 +6,26 @@ enum LearningLevel {
   advanced,
 }
 
+LearningLevel learningLevelFromApiValue(String? value) {
+  final normalized = value?.trim().toLowerCase();
+  switch (normalized) {
+    case 'beginner':
+    case 'easy':
+    case '초급':
+      return LearningLevel.beginner;
+    case 'intermediate':
+    case 'medium':
+    case '중급':
+      return LearningLevel.intermediate;
+    case 'advanced':
+    case 'hard':
+    case '고급':
+      return LearningLevel.advanced;
+    default:
+      return LearningLevel.beginner;
+  }
+}
+
 extension LearningLevelX on LearningLevel {
   String get apiValue {
     switch (this) {
@@ -52,32 +72,34 @@ extension LearningLevelX on LearningLevel {
   }
 
   LearningMode get defaultLearningMode => LearningMode.recommended;
-
-  static LearningLevel fromApiValue(String? value) {
-    final normalized = value?.trim().toLowerCase();
-    switch (normalized) {
-      case 'beginner':
-      case 'easy':
-      case '초급':
-        return LearningLevel.beginner;
-      case 'intermediate':
-      case 'medium':
-      case '중급':
-        return LearningLevel.intermediate;
-      case 'advanced':
-      case 'hard':
-      case '고급':
-        return LearningLevel.advanced;
-      default:
-        return LearningLevel.beginner;
-    }
-  }
 }
 
 enum QuestionGenerationMode {
   aiOnly,
   materialOnly,
   mixed,
+}
+
+QuestionGenerationMode questionGenerationModeFromApiValue(String? value) {
+  final normalized = value?.trim().toLowerCase();
+  switch (normalized) {
+    case 'ai_only':
+    case 'aionly':
+    case 'ai':
+      return QuestionGenerationMode.aiOnly;
+    case 'material_only':
+    case 'materialonly':
+    case 'document':
+    case '자료':
+      return QuestionGenerationMode.materialOnly;
+    case 'mixed':
+    case 'ai_material':
+    case 'hybrid':
+    case '혼합':
+      return QuestionGenerationMode.mixed;
+    default:
+      return QuestionGenerationMode.aiOnly;
+  }
 }
 
 extension QuestionGenerationModeX on QuestionGenerationMode {
@@ -126,28 +148,6 @@ extension QuestionGenerationModeX on QuestionGenerationMode {
   }
 
   bool get requiresMaterial => this == QuestionGenerationMode.materialOnly || this == QuestionGenerationMode.mixed;
-
-  static QuestionGenerationMode fromApiValue(String? value) {
-    final normalized = value?.trim().toLowerCase();
-    switch (normalized) {
-      case 'ai_only':
-      case 'aionly':
-      case 'ai':
-        return QuestionGenerationMode.aiOnly;
-      case 'material_only':
-      case 'materialonly':
-      case 'document':
-      case '자료':
-        return QuestionGenerationMode.materialOnly;
-      case 'mixed':
-      case 'ai_material':
-      case 'hybrid':
-      case '혼합':
-        return QuestionGenerationMode.mixed;
-      default:
-        return QuestionGenerationMode.aiOnly;
-    }
-  }
 }
 
 class QuizSetupArgs {
