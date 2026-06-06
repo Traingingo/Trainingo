@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/constants/app_constants.dart';
 import '../models/lesson_model.dart';
+import '../models/question_generation_config.dart';
 import '../models/question_model.dart';
 
 class QuestionService {
@@ -85,13 +86,20 @@ class QuestionService {
   Future<List<QuestionModel>> generateQuestions({
     required String subject,
     required String difficulty,
-    required String type,
+    required QuestionGenerationConfig config,
     int sessionId = 0,
     String levelTitle = "",
     String levelDescription = "",
-    int count = 10,
   }) async {
     final url = Uri.parse('$baseUrl/api/generate-questions');
+    final body = <String, dynamic>{
+      "subject": subject,
+      "difficulty": difficulty,
+      "level_title": levelTitle,
+      "level_description": levelDescription,
+      "session_id": sessionId,
+    };
+    body.addAll(config.toJson());
 
     try {
       final response = await http.post(
@@ -100,14 +108,7 @@ class QuestionService {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
-        body: jsonEncode({
-          "subject": subject,
-          "difficulty": difficulty,
-          "level_title": levelTitle,
-          "level_description": levelDescription,
-          "count": count,
-          "session_id": sessionId,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200) {
@@ -117,7 +118,7 @@ class QuestionService {
         try {
           return questionsJson.map((json) => QuestionModel.fromJson(json)).toList();
         } catch (modelError) {
-          print("❌ [파싱에러] QuestionModel 변환 실패: $modelError");
+          print("모델 변환 실패: $modelError");
           throw Exception("데이터 모델 변환 에러 발생: $modelError");
         }
       } else {
@@ -152,7 +153,7 @@ class QuestionService {
         throw Exception("학습 진도 저장 실패");
       }
     } catch (e) {
-      print("❌ [학습완료 저장실패]: $e");
+      print("학습완료 저장실패: $e");
     }
   }
 
@@ -177,7 +178,7 @@ class QuestionService {
         }).toList();
       }
     } catch (e) {
-      print("❌ [세션목록 조회실패]: $e");
+      print("세션목록 조회실패: $e");
     }
     return [];
   }
@@ -210,7 +211,7 @@ class QuestionService {
         }),
       );
     } catch (e) {
-      print("❌ [오답 저장 실패]: $e");
+      print("오답 저장 실패: $e");
     }
   }
 
@@ -224,7 +225,7 @@ class QuestionService {
         return List<Map<String, dynamic>>.from(answersJson);
       }
     } catch (e) {
-      print("❌ [오답 목록 조회 실패]: $e");
+      print("오답 목록 조회 실패: $e");
     }
     return [];
   }
@@ -235,7 +236,7 @@ class QuestionService {
       final response = await http.delete(url, headers: {"Accept": "application/json"});
       return response.statusCode == 200;
     } catch (e) {
-      print("❌ [오답 항목 삭제 실패]: $e");
+      print("오답 항목 삭제 실패: $e");
       return false;
     }
   }
