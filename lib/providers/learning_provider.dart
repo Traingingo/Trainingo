@@ -101,12 +101,12 @@ class LearningProvider extends ChangeNotifier {
 
   LearningLevel _readLearningLevel(Map<String, dynamic> map) {
     final rawLevel = map['learning_level']?.toString();
-    if (rawLevel != null && rawLevel.trim().isNotEmpty) return LearningLevelX.fromApiValue(rawLevel);
-    return LearningLevelX.fromApiValue(map['difficulty']?.toString());
+    if (rawLevel != null && rawLevel.trim().isNotEmpty) return learningLevelFromApiValue(rawLevel);
+    return learningLevelFromApiValue(map['difficulty']?.toString());
   }
 
   QuestionGenerationMode _readGenerationMode(Map<String, dynamic> map) {
-    return QuestionGenerationModeX.fromApiValue(map['generation_mode']?.toString());
+    return questionGenerationModeFromApiValue(map['generation_mode']?.toString());
   }
 
   Future<void> generateCurriculum(
