@@ -7,6 +7,7 @@ import '../screens/learning/question_screen.dart';
 import '../screens/learning/question_setup_screen.dart';
 import '../screens/main_shell_screen.dart';
 import '../screens/materials/material_upload_screen.dart';
+import '../screens/review/review_screen.dart';
 
 class AppRoutes {
   static const String root = '/';
@@ -16,6 +17,7 @@ class AppRoutes {
   static const String lessons = '/lessons';
   static const String questions = '/questions';
   static const String materials = '/materials';
+  static const String review = '/review';
 
   static final Set<String> _protectedRoutes = {
     home,
@@ -23,6 +25,7 @@ class AppRoutes {
     lessons,
     questions,
     materials,
+    review,
   };
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings, AuthProvider authProvider) {
@@ -50,6 +53,8 @@ class AppRoutes {
         return _buildRoute(questions, const QuestionScreen(), settings);
       case materials:
         return _buildRoute(materials, const MaterialUploadScreen(), settings);
+      case review:
+        return _buildRoute(review, const ReviewScreen(), settings);
       default:
         return _buildRoute(
           authProvider.isLoggedIn ? home : login,
