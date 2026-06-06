@@ -1,13 +1,48 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import '../core/constants/app_constants.dart';
-import '../models/question_model.dart';
 import '../models/lesson_model.dart';
+import '../models/question_model.dart';
 
 class QuestionService {
   final String baseUrl = AppConstants.baseUrl;
 
-  // 커리큘럼 생성 (세션으로 생성 및 DB 저장)
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  int _toInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  bool _toBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final stringValue = value?.toString().toLowerCase();
+    if (stringValue == 'true') return true;
+    if (stringValue == 'false') return false;
+    return fallback;
+  }
+
+  List<LessonModel> _parseLessons(List<dynamic> curriculumJson) {
+    return curriculumJson.map((json) {
+      final map = Map<String, dynamic>.from(json as Map);
+      return LessonModel(
+        id: _toInt(map['id']),
+        title: map['title']?.toString() ?? '',
+        description: map['description']?.toString() ?? '',
+        level: _toInt(map['level'], fallback: 1),
+        isLocked: _toBool(map['isLocked'], fallback: true),
+        isCompleted: _toBool(map['isCompleted']),
+      );
+    }).toList();
+  }
+
   Future<Map<String, dynamic>> generateCurriculum({
     required String subject,
     required int userId,
@@ -27,29 +62,18 @@ class QuestionService {
         }),
       );
 
+      final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
         final List<dynamic> curriculumJson = responseData['curriculum'] ?? [];
-        
-        final List<LessonModel> lessons = curriculumJson.map((json) {
-          return LessonModel(
-            id: json['id'] ?? 0,
-            title: json['title']?.toString() ?? '',
-            description: json['description']?.toString() ?? '',
-            level: json['level'] ?? 1,
-            isLocked: json['isLocked'] ?? true,
-            isCompleted: json['isCompleted'] ?? false,
-          );
-        }).toList();
 
         return {
           "sessionId": responseData['session_id'] ?? 0,
           "subject": responseData['subject'] ?? subject,
-          "progress": (responseData['progress'] ?? 0.0) as double,
-          "lessons": lessons,
+          "progress": _toDouble(responseData['progress']),
+          "lessons": _parseLessons(curriculumJson),
         };
       } else {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
         final errorMsg = responseData['detail'] ?? "커리큘럼 생성 에러";
         throw Exception(errorMsg);
       }
@@ -58,7 +82,6 @@ class QuestionService {
     }
   }
 
-  // 퀴즈 문제 생성 (RAG용 session_id 지원)
   Future<List<QuestionModel>> generateQuestions({
     required String subject,
     required String difficulty,
@@ -66,6 +89,7 @@ class QuestionService {
     int sessionId = 0,
     String levelTitle = "",
     String levelDescription = "",
+    int count = 10,
   }) async {
     final url = Uri.parse('$baseUrl/api/generate-questions');
 
@@ -81,7 +105,7 @@ class QuestionService {
           "difficulty": difficulty,
           "level_title": levelTitle,
           "level_description": levelDescription,
-          "count": 3,
+          "count": count,
           "session_id": sessionId,
         }),
       );
@@ -97,14 +121,15 @@ class QuestionService {
           throw Exception("데이터 모델 변환 에러 발생: $modelError");
         }
       } else {
-        throw Exception("백엔드 서버 에러: ${response.statusCode}");
+        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+        final errorMsg = responseData['detail'] ?? "백엔드 서버 에러: ${response.statusCode}";
+        throw Exception(errorMsg);
       }
     } catch (e) {
       throw Exception("서버 연결에 실패했습니다: $e");
     }
   }
 
-  // 레벨(단원) 학습 완료 요청
   Future<void> completeLesson({
     required int sessionId,
     required int lessonId,
@@ -131,7 +156,6 @@ class QuestionService {
     }
   }
 
-  // 사용자 학습 세션 목록 조회 (이어서 학습하기용)
   Future<List<Map<String, dynamic>>> fetchUserSessions(int userId) async {
     final url = Uri.parse('$baseUrl/api/sessions?user_id=$userId');
     try {
@@ -139,25 +163,16 @@ class QuestionService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
         final List<dynamic> sessionsJson = responseData['sessions'] ?? [];
-        
+
         return sessionsJson.map((session) {
-          final List<dynamic> curriculumJson = session['curriculum'] ?? [];
-          final List<LessonModel> lessons = curriculumJson.map((json) {
-            return LessonModel(
-              id: json['id'] ?? 0,
-              title: json['title']?.toString() ?? '',
-              description: json['description']?.toString() ?? '',
-              level: json['level'] ?? 1,
-              isLocked: json['isLocked'] ?? true,
-              isCompleted: json['isCompleted'] ?? false,
-            );
-          }).toList();
+          final map = Map<String, dynamic>.from(session as Map);
+          final List<dynamic> curriculumJson = map['curriculum'] ?? [];
 
           return {
-            "id": session['id'],
-            "subject": session['subject'],
-            "progress": (session['progress'] ?? 0.0) as double,
-            "lessons": lessons,
+            "id": map['id'],
+            "subject": map['subject'],
+            "progress": _toDouble(map['progress']),
+            "lessons": _parseLessons(curriculumJson),
           };
         }).toList();
       }
@@ -167,7 +182,6 @@ class QuestionService {
     return [];
   }
 
-  // 오답노트 저장 API
   Future<void> saveIncorrectAnswer({
     required int userId,
     required String subject,
@@ -200,7 +214,6 @@ class QuestionService {
     }
   }
 
-  // 오답노트 조회 API
   Future<List<Map<String, dynamic>>> fetchIncorrectAnswers(int userId) async {
     final url = Uri.parse('$baseUrl/api/incorrect-answers?user_id=$userId');
     try {
@@ -216,7 +229,6 @@ class QuestionService {
     return [];
   }
 
-  // 오답노트 항목 삭제 API
   Future<bool> deleteIncorrectAnswer(int answerId) async {
     final url = Uri.parse('$baseUrl/api/incorrect-answers/$answerId');
     try {

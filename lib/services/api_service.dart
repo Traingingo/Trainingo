@@ -1,8 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
 
 import '../core/constants/app_constants.dart';
+
+class UploadFileData {
+  final Uint8List bytes;
+  final String filename;
+
+  const UploadFileData({
+    required this.bytes,
+    required this.filename,
+  });
+}
 
 class ApiService {
   final String baseUrl = AppConstants.baseUrl;
@@ -17,7 +28,7 @@ class ApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return jsonDecode(utf8.decode(response.bodyBytes));
       }
-      
+
       final errorMsg = _parseError(response);
       throw Exception(errorMsg);
     } catch (e) {
@@ -26,9 +37,9 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> post(
-      String endpoint,
-      Map<String, dynamic> body,
-      ) async {
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl$endpoint'),
@@ -50,29 +61,53 @@ class ApiService {
     }
   }
 
-  // 파일 업로드용 multipart POST 요청 (웹/모바일 호환)
+  // 파일 1개 업로드용 multipart POST 요청 (기존 호출부 호환)
   Future<Map<String, dynamic>> uploadFile(
-      String endpoint,
-      Uint8List fileBytes,
-      String filename,
-      Map<String, String> fields,
-      ) async {
+    String endpoint,
+    Uint8List fileBytes,
+    String filename,
+    Map<String, String> fields,
+  ) async {
+    return uploadFiles(
+      endpoint,
+      [
+        UploadFileData(
+          bytes: fileBytes,
+          filename: filename,
+        ),
+      ],
+      fields,
+      fileFieldName: 'file',
+    );
+  }
+
+  // 여러 파일 업로드용 multipart POST 요청 (Flutter Web/Windows bytes 기반)
+  Future<Map<String, dynamic>> uploadFiles(
+    String endpoint,
+    List<UploadFileData> files,
+    Map<String, String> fields, {
+    String fileFieldName = 'files',
+  }) async {
+    if (files.isEmpty) {
+      throw Exception('업로드할 파일을 1개 이상 선택해 주세요.');
+    }
+
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
       final request = http.MultipartRequest('POST', uri);
 
-      // 텍스트 필드 추가
       request.fields.addAll(fields);
 
-      // 파일 바이트 데이터 추가
-      final multipartFile = http.MultipartFile.fromBytes(
-        'file',
-        fileBytes,
-        filename: filename,
-      );
-      request.files.add(multipartFile);
+      for (final file in files) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            fileFieldName,
+            file.bytes,
+            filename: file.filename,
+          ),
+        );
+      }
 
-      // 요청 전송
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 

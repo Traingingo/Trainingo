@@ -1,76 +1,101 @@
-import sqlite3
 import json
 import os
+import sqlite3
+from pathlib import Path
+from typing import Optional
+from urllib.parse import unquote, urlparse
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "trainingo.db")
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
+SCHEMA_PATH = BASE_DIR / "schema.sql"
+
+load_dotenv(dotenv_path=BASE_DIR / ".env")
+
+
+def _path_from_database_url(database_url: Optional[str]) -> Optional[str]:
+    if not database_url:
+        return None
+
+    if database_url.startswith("sqlite:///"):
+        return database_url.replace("sqlite:///", "", 1)
+
+    parsed = urlparse(database_url)
+    if parsed.scheme != "sqlite":
+        raise ValueError("현재 프로젝트는 SQLite만 지원합니다. DATABASE_URL은 sqlite:/// 형식이어야 합니다.")
+
+    return unquote(parsed.path)
+
+
+def _resolve_db_path() -> Path:
+    raw_path = os.getenv("DB_PATH") or _path_from_database_url(os.getenv("DATABASE_URL"))
+    if not raw_path:
+        return BASE_DIR / "trainingo.db"
+
+    db_path = Path(raw_path).expanduser()
+    if db_path.is_absolute():
+        return db_path
+
+    return (PROJECT_ROOT / db_path).resolve()
+
+
+DB_PATH = _resolve_db_path()
+
+
+def get_db_path() -> str:
+    return str(DB_PATH)
+
 
 def get_db_connection():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
+    if not SCHEMA_PATH.exists():
+        raise FileNotFoundError(f"DB schema file not found: {SCHEMA_PATH}")
+
     conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # 1. Users table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        nickname TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    try:
+        with SCHEMA_PATH.open("r", encoding="utf-8") as schema_file:
+            conn.executescript(schema_file.read())
+        conn.commit()
+        print(f"SQLite Database initialized successfully: {DB_PATH}")
+    finally:
+        conn.close()
+
+
+def _lesson_row_to_dict(row):
+    lesson = dict(row)
+    lesson["isLocked"] = bool(lesson.get("is_locked", 0))
+    lesson["isCompleted"] = bool(lesson.get("is_completed", 0))
+    return lesson
+
+
+def _fetch_curriculum(cursor, session_id):
+    cursor.execute(
+        """
+        SELECT id, level, title, description, is_locked, is_completed
+        FROM lessons
+        WHERE session_id = ?
+        ORDER BY level ASC
+        """,
+        (session_id,),
     )
-    """)
-    
-    # 2. Study Sessions table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS study_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        subject TEXT NOT NULL,
-        progress REAL DEFAULT 0.0,
-        source_text TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-    """)
-    
-    # 3. Lessons table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS lessons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id INTEGER NOT NULL,
-        level INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        is_locked INTEGER DEFAULT 1,
-        is_completed INTEGER DEFAULT 0,
-        FOREIGN KEY(session_id) REFERENCES study_sessions(id)
-    )
-    """)
-    
-    # 4. Incorrect Answers table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS incorrect_answers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        subject TEXT NOT NULL,
-        question TEXT NOT NULL,
-        options_json TEXT NOT NULL,
-        answer TEXT NOT NULL,
-        explanation TEXT NOT NULL,
-        user_answer TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-    """)
-    
-    conn.commit()
-    conn.close()
-    print("SQLite Database initialized successfully.")
+    return [_lesson_row_to_dict(row) for row in cursor.fetchall()]
+
+
+def _session_row_to_dict(cursor, row):
+    if not row:
+        return None
+
+    session = dict(row)
+    session["curriculum"] = _fetch_curriculum(cursor, session["id"])
+    return session
+
 
 # User Authentication Helpers
 def register_user(email, password, nickname):
@@ -79,7 +104,7 @@ def register_user(email, password, nickname):
     try:
         cursor.execute(
             "INSERT INTO users (email, password, nickname) VALUES (?, ?, ?)",
-            (email, password, nickname)
+            (email, password, nickname),
         )
         conn.commit()
         user_id = cursor.lastrowid
@@ -89,176 +114,255 @@ def register_user(email, password, nickname):
     finally:
         conn.close()
 
+
 def login_user(email, password):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, email, nickname FROM users WHERE email = ? AND password = ?",
-        (email, password)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {"id": row["id"], "email": row["email"], "nickname": row["nickname"]}
-    return None
+    try:
+        cursor.execute(
+            "SELECT id, email, nickname FROM users WHERE email = ? AND password = ?",
+            (email, password),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {"id": row["id"], "email": row["email"], "nickname": row["nickname"]}
+        return None
+    finally:
+        conn.close()
+
 
 # Study Session Helpers
 def get_session_by_subject(user_id, subject):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, user_id, subject, progress, source_text FROM study_sessions WHERE user_id = ? AND subject = ?",
-        (user_id, subject)
-    )
-    row = cursor.fetchone()
-    if not row:
+    try:
+        cursor.execute(
+            """
+            SELECT id, user_id, subject, progress, source_text, created_at, updated_at
+            FROM study_sessions
+            WHERE user_id = ? AND subject = ?
+            """,
+            (user_id, subject),
+        )
+        return _session_row_to_dict(cursor, cursor.fetchone())
+    finally:
         conn.close()
-        return None
-    
-    session = dict(row)
-    cursor.execute(
-        "SELECT id, level, title, description, is_locked, is_completed FROM lessons WHERE session_id = ? ORDER BY level ASC",
-        (session["id"],)
-    )
-    lessons = [dict(r) for r in cursor.fetchall()]
-    # Convert sqlite 1/0 to bool
-    for l in lessons:
-        l["isLocked"] = bool(l["is_locked"])
-        l["isCompleted"] = bool(l["is_completed"])
-    session["curriculum"] = lessons
-    conn.close()
-    return session
+
+
+def get_session_by_id(session_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, user_id, subject, progress, source_text, created_at, updated_at
+            FROM study_sessions
+            WHERE id = ?
+            """,
+            (session_id,),
+        )
+        return _session_row_to_dict(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
 
 def create_study_session(user_id, subject, curriculum, source_text=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Create session
         cursor.execute(
             "INSERT INTO study_sessions (user_id, subject, source_text) VALUES (?, ?, ?)",
-            (user_id, subject, source_text)
+            (user_id, subject, source_text),
         )
         session_id = cursor.lastrowid
-        
-        # Insert lessons
-        for item in curriculum:
-            # First level is unlocked (is_locked=0), others locked (is_locked=1)
-            is_locked = 0 if item["level"] == 1 else 1
+
+        for index, item in enumerate(curriculum):
+            level = int(item.get("level", index + 1))
+            title = item.get("title", "학습 단원")
+            description = item.get("description", "이 단원의 핵심 개념을 학습합니다.")
+            is_locked = 0 if level == 1 else 1
             cursor.execute(
-                "INSERT INTO lessons (session_id, level, title, description, is_locked, is_completed) VALUES (?, ?, ?, ?, ?, ?)",
-                (session_id, item["level"], item["title"], item["description"], is_locked, 0)
+                """
+                INSERT INTO lessons (session_id, level, title, description, is_locked, is_completed)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, level, title, description, is_locked, 0),
             )
+
         conn.commit()
         return session_id
     finally:
         conn.close()
 
+
 def get_study_sessions(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, user_id, subject, progress, source_text FROM study_sessions WHERE user_id = ? ORDER BY updated_at DESC",
-        (user_id,)
-    )
-    rows = cursor.fetchall()
-    sessions = []
-    for row in rows:
-        session = dict(row)
+    try:
         cursor.execute(
-            "SELECT id, level, title, description, is_locked, is_completed FROM lessons WHERE session_id = ? ORDER BY level ASC",
-            (session["id"],)
+            """
+            SELECT id, user_id, subject, progress, source_text, created_at, updated_at
+            FROM study_sessions
+            WHERE user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (user_id,),
         )
-        lessons = []
-        for r in cursor.fetchall():
-            d = dict(r)
-            d["isLocked"] = bool(d["is_locked"])
-            d["isCompleted"] = bool(d["is_completed"])
-            lessons.append(d)
-        session["curriculum"] = lessons
-        sessions.append(session)
-    conn.close()
-    return sessions
+        rows = cursor.fetchall()
+        return [_session_row_to_dict(cursor, row) for row in rows]
+    finally:
+        conn.close()
 
-def update_lesson_completion(session_id, lesson_id):
+
+def append_session_source_text(session_id: int, additional_text: str) -> bool:
+    if not additional_text.strip():
+        return False
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Get current completed lesson level
-        cursor.execute(
-            "SELECT level FROM lessons WHERE session_id = ? AND id = ?",
-            (session_id, lesson_id)
-        )
-        current_lesson = cursor.fetchone()
-        if not current_lesson:
+        cursor.execute("SELECT id FROM study_sessions WHERE id = ?", (session_id,))
+        if not cursor.fetchone():
             return False
-        
-        current_level = current_lesson["level"]
-        
-        # Complete the lesson
+
         cursor.execute(
-            "UPDATE lessons SET is_completed = 1, is_locked = 0 WHERE id = ?",
-            (lesson_id,)
+            """
+            UPDATE study_sessions
+            SET source_text = CASE
+                    WHEN source_text IS NULL OR TRIM(source_text) = ''
+                    THEN ?
+                    ELSE source_text || CHAR(10) || CHAR(10) || ?
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (additional_text, additional_text, session_id),
         )
-        
-        # Unlock next level if it exists
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def replace_session_curriculum(session_id: int, curriculum) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM study_sessions WHERE id = ?", (session_id,))
+        if not cursor.fetchone():
+            return False
+
+        cursor.execute("DELETE FROM lessons WHERE session_id = ?", (session_id,))
+
+        for index, item in enumerate(curriculum):
+            level = int(item.get("level", index + 1))
+            title = item.get("title", "학습 단원")
+            description = item.get("description", "이 단원의 핵심 개념을 학습합니다.")
+            is_locked = 0 if level == 1 else 1
+
+            cursor.execute(
+                """
+                INSERT INTO lessons (session_id, level, title, description, is_locked, is_completed)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, level, title, description, is_locked, 0),
+            )
+
         cursor.execute(
-            "UPDATE lessons SET is_locked = 0 WHERE session_id = ? AND level = ?",
-            (session_id, current_level + 1)
-        )
-        
-        # Calculate new progress
-        cursor.execute(
-            "SELECT COUNT(*) as total, SUM(is_completed) as completed FROM lessons WHERE session_id = ?",
-            (session_id,)
-        )
-        progress_row = cursor.fetchone()
-        total = progress_row["total"]
-        completed = progress_row["completed"] or 0
-        progress = float(completed) / float(total) if total > 0 else 0.0
-        
-        # Update session progress
-        cursor.execute(
-            "UPDATE study_sessions SET progress = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (progress, session_id)
+            """
+            UPDATE study_sessions
+            SET progress = 0.0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (session_id,),
         )
         conn.commit()
         return True
     finally:
         conn.close()
 
+
+def update_lesson_completion(session_id, lesson_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT level FROM lessons WHERE session_id = ? AND id = ?",
+            (session_id, lesson_id),
+        )
+        current_lesson = cursor.fetchone()
+        if not current_lesson:
+            return False
+
+        current_level = current_lesson["level"]
+        cursor.execute("UPDATE lessons SET is_completed = 1, is_locked = 0 WHERE id = ?", (lesson_id,))
+        cursor.execute(
+            "UPDATE lessons SET is_locked = 0 WHERE session_id = ? AND level = ?",
+            (session_id, current_level + 1),
+        )
+
+        cursor.execute(
+            "SELECT COUNT(*) as total, SUM(is_completed) as completed FROM lessons WHERE session_id = ?",
+            (session_id,),
+        )
+        progress_row = cursor.fetchone()
+        total = progress_row["total"]
+        completed = progress_row["completed"] or 0
+        progress = float(completed) / float(total) if total > 0 else 0.0
+
+        cursor.execute(
+            "UPDATE study_sessions SET progress = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (progress, session_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 # Incorrect Answers Helpers
 def add_incorrect_answer(user_id, subject, question, options, answer, explanation, user_answer):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        options_json = json.dumps(options)
+        options_json = json.dumps(options, ensure_ascii=False)
         cursor.execute(
             """
             INSERT INTO incorrect_answers (user_id, subject, question, options_json, answer, explanation, user_answer)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, subject, question, options_json, answer, explanation, user_answer)
+            (user_id, subject, question, options_json, answer, explanation, user_answer),
         )
         conn.commit()
         return cursor.lastrowid
     finally:
         conn.close()
 
+
 def get_incorrect_answers(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, user_id, subject, question, options_json, answer, explanation, user_answer, created_at FROM incorrect_answers WHERE user_id = ? ORDER BY created_at DESC",
-        (user_id,)
-    )
-    rows = cursor.fetchall()
-    answers = []
-    for r in rows:
-        d = dict(r)
-        d["options"] = json.loads(d["options_json"])
-        answers.append(d)
-    conn.close()
-    return answers
+    try:
+        cursor.execute(
+            """
+            SELECT id, user_id, subject, question, options_json, answer, explanation, user_answer, created_at
+            FROM incorrect_answers
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall()
+        answers = []
+        for row in rows:
+            answer = dict(row)
+            answer["options"] = json.loads(answer["options_json"])
+            answers.append(answer)
+        return answers
+    finally:
+        conn.close()
+
 
 def delete_incorrect_answer(answer_id):
     conn = get_db_connection()
@@ -270,12 +374,15 @@ def delete_incorrect_answer(answer_id):
     finally:
         conn.close()
 
+
 def get_session_source_text(session_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT source_text FROM study_sessions WHERE id = ?", (session_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return row["source_text"]
-    return None
+    try:
+        cursor.execute("SELECT source_text FROM study_sessions WHERE id = ?", (session_id,))
+        row = cursor.fetchone()
+        if row:
+            return row["source_text"]
+        return None
+    finally:
+        conn.close()
