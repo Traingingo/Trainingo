@@ -1,110 +1,156 @@
 # Trainingo Backend 실행 가이드
 
-이 문서는 Trainingo 프로젝트의 Backend 서버 실행 방법을 정리한 문서이다.
+Trainingo 백엔드는 FastAPI + Uvicorn + SQLite 기반 API 서버입니다.
 
-Backend는 **PyCharm**에서 실행하며, Flutter 앱과 연동하기 위해 FastAPI + Uvicorn 기준으로 실행한다.
+Flutter 앱을 실행하기 전에 백엔드 서버가 먼저 켜져 있어야 합니다.
 
----
+## 1. 백엔드 폴더 구조
 
-## 1. 실행 환경
+```bash
+backend/
+ ┣ main.py          # FastAPI API 서버
+ ┣ database.py      # SQLite 연결 및 CRUD 함수
+ ┣ init_db.py       # DB 초기화 스크립트
+ ┣ schema.sql       # DB 테이블 스키마
+ ┣ .env.example     # 환경 변수 예시
+ ┣ requirements.txt # Python 패키지 목록
+ ┗ README.md
+```
 
-* IDE: PyCharm
-* Backend Framework: FastAPI
-* Server: Uvicorn
-* 기본 포트: `8000`
+## 2. 환경 변수 설정
 
----
+프로젝트 루트에서 `.env.example`을 복사해 `.env` 파일을 만듭니다.
 
-## 2. PyCharm Configuration 설정
+```powershell
+copy backend\.env.example backend\.env
+```
 
-PyCharm 상단 메뉴에서 다음 경로로 이동한다.
+`backend/.env` 파일을 열고 값을 입력합니다.
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+DATABASE_URL=sqlite:///./backend/trainingo.db
+# DB_PATH=./backend/trainingo.db
+```
+
+### 환경 변수 설명
+
+| 변수명 | 설명 |
+| --- | --- |
+| `GROQ_API_KEY` | Groq API 키. AI 커리큘럼/문제 생성에 필요 |
+| `DATABASE_URL` | SQLite DB 위치. 기본값은 `backend/trainingo.db` |
+| `DB_PATH` | DB 파일 경로를 직접 지정할 때 사용. 보통은 주석 상태로 둬도 됨 |
+
+`.env` 파일에는 개인 API 키가 들어가므로 GitHub에 올리면 안 됩니다.
+
+## 3. Python 가상환경 생성 및 패키지 설치
+
+프로젝트 루트에서 실행합니다.
+
+```powershell
+python -m venv backend\.venv
+backend\.venv\Scripts\activate
+pip install -r backend\requirements.txt
+```
+
+이미 가상환경이 있다면 다음만 실행합니다.
+
+```powershell
+backend\.venv\Scripts\activate
+pip install -r backend\requirements.txt
+```
+
+## 4. DB 초기화
+
+프로젝트 루트에서 실행합니다.
+
+```powershell
+python backend\init_db.py
+```
+
+정상 실행 후 `backend/trainingo.db` 파일이 생성됩니다.
+
+## 5. 로컬 터미널에서 백엔드 실행
+
+프로젝트 루트에서 실행합니다.
+
+```powershell
+backend\.venv\Scripts\activate
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+정상 실행 확인:
 
 ```text
-Run > Edit Configurations...
+http://127.0.0.1:8000
+http://127.0.0.1:8000/docs
 ```
 
-Backend 실행 Configuration을 선택한 뒤, 실행 옵션을 아래와 같이 설정한다.
+## 6. PyCharm에서 실행하는 경우
 
----
+PyCharm에서 `Run > Edit Configurations...`로 이동합니다.
 
-## 3. 기본 실행 명령어
-
-Backend 파일명이 `main.py`이고, 내부에 `app = FastAPI()`가 있는 경우 다음 명령어를 사용한다.
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-만약 Backend 파일명이 `app.py`라면 다음처럼 실행한다.
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-```
-
----
-
-## 4. PyCharm 설정 예시
-
-PyCharm Configuration에서 `Script` 또는 `Module name`에 `uvicorn`을 설정하고, `Parameters`에는 아래 내용을 입력한다.
-
-```bash
-main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-또는 PyCharm에 Host, Port 입력 칸이 따로 있는 경우 다음과 같이 설정한다.
+설정 예시:
 
 ```text
-Host: 0.0.0.0
-Port: 8000
-Additional options: --reload
+Module name: uvicorn
+Parameters: backend.main:app --reload --host 127.0.0.1 --port 8000
+Working directory: 프로젝트 루트 경로
 ```
 
----
+실제 핸드폰에서 PC IP로 접근해야 하는 경우에는 host를 `0.0.0.0`으로 바꿀 수 있습니다.
 
-## 5. 중요한 설정
-
-Backend를 Flutter 앱과 연결하려면 반드시 다음 옵션을 사용해야 한다.
-
-```bash
---host 0.0.0.0
+```powershell
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-`127.0.0.1` 또는 `localhost`로만 서버를 실행하면 외부 디바이스에서 접근이 안 될 수 있다.
+## 7. Flutter 앱과 연결
 
-따라서 개발 중에는 다음과 같은 형태로 실행한다.
+### Flutter Web / Windows Desktop
 
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
----
-
-## 6. 정상 실행 확인
-
-Backend가 정상적으로 실행되면 PyCharm 콘솔에 다음과 비슷한 문구가 출력된다.
-
-```text
-Uvicorn running on http://0.0.0.0:8000
-```
-
-또는 브라우저에서 아래 주소로 접속해 확인할 수 있다.
+백엔드 주소:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-FastAPI 문서 페이지는 다음 주소에서 확인할 수 있다.
+### 실제 핸드폰 USB 연결
+
+Flutter 앱의 백엔드 주소를 `http://127.0.0.1:8000`으로 유지하려면 ADB reverse를 사용합니다.
+
+```powershell
+adb reverse tcp:8000 tcp:8000
+```
+
+`adb`가 인식되지 않으면 전체 경로로 실행합니다.
+
+```powershell
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" reverse tcp:8000 tcp:8000
+```
+
+### Android Emulator
+
+Android Emulator에서는 PC의 localhost를 아래 주소로 접근합니다.
 
 ```text
-http://127.0.0.1:8000/docs
+http://10.0.2.2:8000
 ```
 
----
+## 8. 실행 요약
 
-## 7. 실행 요약
+터미널 1에서 백엔드 실행:
 
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```powershell
+cd C:\Users\User\KGH_Projects\AndroidStudioProjects\Trainingo
+backend\.venv\Scripts\activate
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Backend 서버는 Flutter 앱을 실행하기 전에 먼저 실행되어 있어야 한다.
+터미널 2에서 실제 핸드폰 USB 연결 시:
+
+```powershell
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" devices
+& "C:\Users\User\AppData\Local\Android\Sdk\platform-tools\adb.exe" reverse tcp:8000 tcp:8000
+```
+
+그 다음 Flutter 앱을 실행합니다.
