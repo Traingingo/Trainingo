@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/learning_level.dart';
 import '../models/learning_mode.dart';
 import '../models/lesson_model.dart';
 import '../models/question_generation_config.dart';
-import '../models/quiz_setup_options.dart';
+import '../models/question_generation_mode.dart';
 import '../services/question_policy_service.dart';
 import '../services/question_service.dart';
 
@@ -15,8 +16,9 @@ class LearningProvider extends ChangeNotifier {
   int currentSessionId = 0;
   bool isLoading = false;
   LearningMode selectedLearningMode = LearningMode.recommended;
-  QuestionGenerationMode selectedGenerationMode = QuestionGenerationMode.aiOnly;
   LearningLevel selectedLearningLevel = LearningLevel.beginner;
+  QuestionGenerationMode selectedGenerationMode = QuestionGenerationMode.aiOnly;
+
   List<Map<String, dynamic>> userSessions = [];
 
   double get progress {
@@ -25,25 +27,31 @@ class LearningProvider extends ChangeNotifier {
     return completed / lessons.length;
   }
 
+  String get selectedDifficultyLabel => selectedLearningLevel.label;
+
   void setSelectedLearningMode(LearningMode mode) {
     selectedLearningMode = mode;
     notifyListeners();
   }
 
-  void setQuizSetup({required QuestionGenerationMode generationMode, required LearningLevel learningLevel}) {
+  void setQuestionSetup({
+    required QuestionGenerationMode generationMode,
+    required LearningLevel learningLevel,
+  }) {
     selectedGenerationMode = generationMode;
     selectedLearningLevel = learningLevel;
-    selectedLearningMode = learningLevel.defaultLearningMode;
     notifyListeners();
   }
 
   QuestionGenerationConfig buildQuestionConfigForLevel(int level, {int count = 10}) {
     final subjectType = SubjectClassifier.classify(subject: currentSubject);
-    final allowedTypes = SubjectQuestionPolicy.allowedTypes(subjectType, subjectName: currentSubject);
-    final policyLevel = selectedLearningLevel.policyLevel + (level - 1);
+    final allowedTypes = SubjectQuestionPolicy.allowedTypes(
+      subjectType,
+      subjectName: currentSubject,
+    );
     final weights = LearningModePlanner.buildWeights(
       mode: selectedLearningMode,
-      level: policyLevel,
+      level: selectedLearningLevel.plannerLevel,
       subjectType: subjectType,
       subjectName: currentSubject,
     );
@@ -55,8 +63,9 @@ class LearningProvider extends ChangeNotifier {
       subjectType: subjectType,
       allowedTypes: allowedTypes,
       weights: weights,
-      level: policyLevel,
+      level: level,
       count: count,
+      usesUploadedMaterial: selectedGenerationMode.requiresMaterial && currentSessionId > 0,
     );
   }
 
@@ -74,65 +83,62 @@ class LearningProvider extends ChangeNotifier {
   bool _toBool(dynamic value, {bool fallback = false}) {
     if (value is bool) return value;
     if (value is num) return value != 0;
-    final text = value?.toString().toLowerCase();
-    if (text == 'true') return true;
-    if (text == 'false') return false;
+    final normalized = value?.toString().toLowerCase();
+    if (normalized == 'true') return true;
+    if (normalized == 'false') return false;
     return fallback;
   }
 
   List<LessonModel> _parseLessons(dynamic rawLessons) {
     if (rawLessons is List) {
       return rawLessons.where((item) => item is LessonModel || item is Map).map((item) {
-        if (item is LessonModel) return item;
+        if (item is LessonModel) {
+          return item;
+        }
+
         final map = Map<String, dynamic>.from(item as Map);
-        final rawLevel = _toInt(map['level']);
         return LessonModel(
           id: _toInt(map['id']),
           title: map['title']?.toString() ?? '',
           description: map['description']?.toString() ?? '',
-          level: rawLevel == 0 ? 1 : rawLevel,
+          level: _toInt(map['level']) == 0 ? 1 : _toInt(map['level']),
           isLocked: _toBool(map['isLocked'] ?? map['is_locked'], fallback: true),
           isCompleted: _toBool(map['isCompleted'] ?? map['is_completed']),
         );
       }).toList();
     }
+
     return [];
-  }
-
-  LearningLevel _readLearningLevel(Map<String, dynamic> map) {
-    final rawLevel = map['learning_level']?.toString();
-    if (rawLevel != null && rawLevel.trim().isNotEmpty) return learningLevelFromApiValue(rawLevel);
-    return learningLevelFromApiValue(map['difficulty']?.toString());
-  }
-
-  QuestionGenerationMode _readGenerationMode(Map<String, dynamic> map) {
-    return questionGenerationModeFromApiValue(map['generation_mode']?.toString());
   }
 
   Future<void> generateCurriculum(
     String subject,
     int userId, {
-    QuestionGenerationMode? generationMode,
-    LearningLevel? learningLevel,
+    QuestionGenerationMode generationMode = QuestionGenerationMode.aiOnly,
+    LearningLevel learningLevel = LearningLevel.beginner,
   }) async {
-    if (generationMode != null && learningLevel != null) {
-      setQuizSetup(generationMode: generationMode, learningLevel: learningLevel);
-    }
-
     isLoading = true;
+    selectedGenerationMode = generationMode;
+    selectedLearningLevel = learningLevel;
     notifyListeners();
 
     try {
       final result = await _questionService.generateCurriculum(
         subject: subject,
         userId: userId,
-        generationMode: selectedGenerationMode,
-        learningLevel: selectedLearningLevel,
+        generationMode: generationMode,
+        learningLevel: learningLevel,
       );
+
       currentSessionId = _toInt(result['sessionId']);
       currentSubject = result['subject'] ?? subject;
+      selectedGenerationMode = QuestionGenerationModeX.fromApiValue(result['generation_mode']);
+      selectedLearningLevel = LearningLevelX.fromApiValue(result['difficulty'] ?? result['learning_level']);
       lessons = _parseLessons(result['lessons']);
       await fetchUserSessions(userId);
+    } catch (e) {
+      debugPrint('커리큘럼 생성 실패: $e');
+      rethrow;
     } finally {
       isLoading = false;
       notifyListeners();
@@ -140,16 +146,17 @@ class LearningProvider extends ChangeNotifier {
   }
 
   Future<void> fetchUserSessions(int userId) async {
-    userSessions = await _questionService.fetchUserSessions(userId);
+    final list = await _questionService.fetchUserSessions(userId);
+    userSessions = list;
     notifyListeners();
   }
 
   void loadSession(Map<String, dynamic> session) {
     currentSessionId = _toInt(session['id']);
     currentSubject = (session['subject'] ?? session['topic'])?.toString() ?? '';
-    selectedGenerationMode = _readGenerationMode(session);
-    selectedLearningLevel = _readLearningLevel(session);
-    selectedLearningMode = selectedLearningLevel.defaultLearningMode;
+    selectedGenerationMode = QuestionGenerationModeX.fromApiValue(session['generation_mode'] ?? session['generationMode']);
+    selectedLearningLevel = LearningLevelX.fromApiValue(session['difficulty'] ?? session['learning_level']);
+    selectedLearningMode = LearningMode.recommended;
     lessons = _parseLessons(session['lessons'] ?? session['curriculum']);
     notifyListeners();
   }
@@ -157,55 +164,102 @@ class LearningProvider extends ChangeNotifier {
   void loadSessionFromUploadResponse(Map<String, dynamic> response) {
     currentSessionId = _toInt(response['session_id']);
     currentSubject = response['subject']?.toString() ?? '';
-    selectedGenerationMode = _readGenerationMode(response);
-    selectedLearningLevel = _readLearningLevel(response);
-    selectedLearningMode = selectedLearningLevel.defaultLearningMode;
+    selectedGenerationMode = QuestionGenerationModeX.fromApiValue(
+      response['generation_mode'] ?? QuestionGenerationMode.materialOnly.apiValue,
+    );
+    selectedLearningLevel = LearningLevelX.fromApiValue(response['difficulty']);
+    selectedLearningMode = LearningMode.recommended;
     lessons = _parseLessons(response['curriculum']);
 
-    final uploadedProgress = _toDouble(response['progress']);
-    final newSession = {
-      'id': currentSessionId,
-      'subject': currentSubject,
-      'progress': uploadedProgress,
-      'lessons': lessons,
-      'generation_mode': selectedGenerationMode.apiValue,
-      'learning_level': selectedLearningLevel.apiValue,
-      'difficulty': selectedLearningLevel.label,
-    };
-
+    final double uploadedProgress = _toDouble(response['progress']);
     var updated = false;
     userSessions = userSessions.map((session) {
       if (_toInt(session['id']) == currentSessionId) {
         updated = true;
-        return {...session, ...newSession};
+        return {
+          ...session,
+          'subject': currentSubject,
+          'progress': uploadedProgress,
+          'lessons': lessons,
+          'generation_mode': selectedGenerationMode.apiValue,
+          'difficulty': selectedLearningLevel.apiValue,
+          'last_studied_at': response['last_studied_at'],
+        };
       }
       return session;
     }).toList();
-    if (!updated && currentSessionId > 0) userSessions = [newSession, ...userSessions];
+
+    if (!updated && currentSessionId > 0) {
+      userSessions = [
+        {
+          'id': currentSessionId,
+          'subject': currentSubject,
+          'progress': uploadedProgress,
+          'lessons': lessons,
+          'generation_mode': selectedGenerationMode.apiValue,
+          'difficulty': selectedLearningLevel.apiValue,
+          'last_studied_at': response['last_studied_at'],
+        },
+        ...userSessions,
+      ];
+    }
+
     notifyListeners();
+  }
+
+  Future<void> updateCurrentSessionSetup(int userId) async {
+    if (currentSessionId <= 0) return;
+    await _questionService.updateSessionSetup(
+      sessionId: currentSessionId,
+      generationMode: selectedGenerationMode,
+      learningLevel: selectedLearningLevel,
+    );
+    await fetchUserSessions(userId);
   }
 
   Future<void> completeLesson(int lessonId) async {
     LessonModel? completedLesson;
     for (final lesson in lessons) {
-      if (lesson.id == lessonId) completedLesson = lesson;
+      if (lesson.id == lessonId) {
+        completedLesson = lesson;
+        break;
+      }
     }
     final nextLevel = completedLesson == null ? null : completedLesson.level + 1;
 
     lessons = lessons.map((lesson) {
       if (lesson.id == lessonId) {
-        return LessonModel(id: lesson.id, title: lesson.title, description: lesson.description, level: lesson.level, isLocked: false, isCompleted: true);
+        return LessonModel(
+          id: lesson.id,
+          title: lesson.title,
+          description: lesson.description,
+          level: lesson.level,
+          isLocked: false,
+          isCompleted: true,
+        );
       }
+
       if (nextLevel != null && lesson.level == nextLevel) {
-        return LessonModel(id: lesson.id, title: lesson.title, description: lesson.description, level: lesson.level, isLocked: false, isCompleted: lesson.isCompleted);
+        return LessonModel(
+          id: lesson.id,
+          title: lesson.title,
+          description: lesson.description,
+          level: lesson.level,
+          isLocked: false,
+          isCompleted: lesson.isCompleted,
+        );
       }
+
       return lesson;
     }).toList();
 
     notifyListeners();
 
     if (currentSessionId > 0) {
-      await _questionService.completeLesson(sessionId: currentSessionId, lessonId: lessonId);
+      await _questionService.completeLesson(
+        sessionId: currentSessionId,
+        lessonId: lessonId,
+      );
     }
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/question_generation_config.dart';
 import '../models/question_model.dart';
+import '../models/question_type.dart';
 import '../services/answer_grading_service.dart';
 import '../services/question_service.dart';
 
@@ -12,7 +13,6 @@ class QuestionProvider extends ChangeNotifier {
   List<QuestionModel> questions = [];
   int currentIndex = 0;
   int score = 0;
-  int activeSessionId = 0;
   bool isLoading = false;
   String? selectedAnswer;
   AnswerGradeResult? lastGradeResult;
@@ -25,7 +25,9 @@ class QuestionProvider extends ChangeNotifier {
     return questions[currentIndex];
   }
 
-  bool get isLastQuestion => currentIndex == questions.length - 1;
+  bool get isLastQuestion {
+    return currentIndex == questions.length - 1;
+  }
 
   Future<void> generateQuestions({
     required String subject,
@@ -38,10 +40,10 @@ class QuestionProvider extends ChangeNotifier {
     isLoading = true;
     currentIndex = 0;
     score = 0;
-    activeSessionId = sessionId;
     selectedAnswer = null;
     lastGradeResult = null;
     hearts = maxHearts;
+    questions = [];
     notifyListeners();
 
     try {
@@ -66,14 +68,16 @@ class QuestionProvider extends ChangeNotifier {
 
   bool checkAnswer({
     required int userId,
+    required int sessionId,
     required String subject,
-    int sessionId = 0,
   }) {
     final question = currentQuestion;
-    final answer = selectedAnswer;
-    if (question == null || answer == null) return false;
+    if (question == null || selectedAnswer == null) return false;
 
-    final gradeResult = _answerGradingService.grade(question: question, userAnswer: answer);
+    final gradeResult = _answerGradingService.grade(
+      question: question,
+      userAnswer: selectedAnswer!,
+    );
     final isCorrect = gradeResult.isCorrect;
     lastGradeResult = gradeResult;
 
@@ -83,14 +87,30 @@ class QuestionProvider extends ChangeNotifier {
       hearts--;
     }
 
-    _questionService.submitAnswer(
+    _questionService.saveAnswerRecord(
       userId: userId,
-      sessionId: sessionId > 0 ? sessionId : activeSessionId,
-      subject: subject,
-      question: question,
-      userAnswer: answer,
+      sessionId: sessionId,
+      questionId: question.id,
+      userAnswer: selectedAnswer!,
       isCorrect: isCorrect,
     );
+
+    if (!isCorrect) {
+      _questionService.saveIncorrectAnswer(
+        userId: userId,
+        sessionId: sessionId,
+        questionId: question.id,
+        subject: subject,
+        question: question.question,
+        options: question.options,
+        answer: question.displayAnswer,
+        modelAnswer: question.displayAnswer,
+        explanation: question.explanation,
+        userAnswer: selectedAnswer!,
+        questionType: question.type.apiValue,
+        difficulty: question.difficulty,
+      );
+    }
 
     notifyListeners();
     return isCorrect;

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/learning_level.dart';
+import '../../models/question_generation_mode.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/learning_provider.dart';
 import '../../providers/question_provider.dart';
@@ -96,7 +98,11 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF3C3C3C)),
                 ),
                 const SizedBox(height: 12),
-                const Text('과목 성격과 레벨에 맞춰 여러 문제 유형을 조합하고 있습니다.', style: TextStyle(color: Colors.grey)),
+                Text(
+                  '${learningProvider.selectedGenerationMode.label} · ${learningProvider.selectedLearningLevel.label} 수준으로 문제 유형을 조합하고 있습니다.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -120,6 +126,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
                 const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
                 const SizedBox(height: 16),
                 const Text('문제를 불러오지 못했습니다.', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text('자료 기반 생성이라면 연결된 업로드 자료가 있는지 확인해 주세요.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
                 const SizedBox(height: 16),
                 DuoButton(text: '뒤로 돌아가기', onPressed: () => _goBackSafely(context)),
               ],
@@ -231,6 +239,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                               final subject = learningProvider.currentSubject;
                               final isCorrect = questionProvider.checkAnswer(
                                 userId: user?.id ?? 1,
+                                sessionId: learningProvider.currentSessionId,
                                 subject: subject,
                               );
                               SoundService.instance.play(isCorrect ? SoundEffect.correct : SoundEffect.wrong);
@@ -277,7 +286,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('학습 중단', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('지금 종료하면 학습 진행 상황이 저장되지 않습니다. 정말 나갈까요?'),
+        content: const Text('지금 종료하면 현재 문제 이후의 진행 상황은 저장되지 않습니다. 정말 나갈까요?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('계속 공부하기')),
           TextButton(
@@ -358,7 +367,7 @@ class _FeedbackSummary extends StatelessWidget {
           const SizedBox(height: 12),
           Text('내 답안: $cleanedUserAnswer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
           const SizedBox(height: 4),
-          Text('올바른 정답: $cleanedAnswer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+          Text('올바른 정답/모범답안: $cleanedAnswer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
         ],
         if ((gradingFeedback ?? '').trim().isNotEmpty) ...[
           const SizedBox(height: 8),
