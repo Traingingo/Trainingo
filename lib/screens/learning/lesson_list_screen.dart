@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/learning_provider.dart';
-import '../../providers/question_provider.dart';
 import '../../routes/app_routes.dart';
 import '../../widgets/common/duo_button.dart';
+import 'question_mode_selection_screen.dart';
 
 class LessonListScreen extends StatelessWidget {
   const LessonListScreen({super.key});
@@ -65,7 +65,7 @@ class LessonListScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'AI 생성 문제 10개 출제',
+                          'AI 맞춤 문제 10개 출제',
                           style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -93,21 +93,19 @@ class LessonListScreen extends StatelessWidget {
                 shadowColor: const Color(0xFF46A302),
                 onPressed: () async {
                   Navigator.pop(bottomSheetContext);
-
-                  final questionProvider = context.read<QuestionProvider>();
                   final learningProvider = context.read<LearningProvider>();
 
-                  questionProvider.generateQuestions(
-                    subject: subject,
-                    difficulty: '초급',
-                    type: '객관식',
-                    sessionId: learningProvider.currentSessionId,
-                    levelTitle: lesson.title,
-                    levelDescription: lesson.description,
-                  );
-
                   if (!context.mounted) return;
-                  Navigator.pushNamed(context, AppRoutes.questions, arguments: lesson.id);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => QuestionModeSelectionSheet(
+                      subject: subject,
+                      lesson: lesson,
+                      sessionId: learningProvider.currentSessionId,
+                    ),
+                  );
                 },
               ),
               const SizedBox(height: 8),
