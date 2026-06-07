@@ -971,4 +971,3 @@ async def upload_material(
     except Exception as e:
         print(f"❌ 자료 업로드/분석 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
