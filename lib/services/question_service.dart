@@ -70,7 +70,9 @@ class QuestionService {
         }),
       );
 
-      final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+      final Map<String, dynamic> responseData = jsonDecode(
+        utf8.decode(response.bodyBytes),
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> curriculumJson = responseData['curriculum'] ?? [];
@@ -102,6 +104,7 @@ class QuestionService {
     String levelDescription = '',
   }) async {
     final url = Uri.parse('$baseUrl/api/generate-questions');
+
     final body = <String, dynamic>{
       'subject': subject,
       'difficulty': difficulty,
@@ -109,6 +112,7 @@ class QuestionService {
       'level_description': levelDescription,
       'session_id': sessionId,
     };
+
     body.addAll(config.toJson());
 
     try {
@@ -122,7 +126,10 @@ class QuestionService {
       );
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+        final Map<String, dynamic> responseData = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        );
+
         final List<dynamic> questionsJson = responseData['questions'] ?? [];
 
         try {
@@ -131,7 +138,10 @@ class QuestionService {
           throw Exception('데이터 모델 변환 에러 발생: $modelError');
         }
       } else {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+        final Map<String, dynamic> responseData = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        );
+
         final errorMsg = responseData['detail'] ?? '백엔드 서버 에러: ${response.statusCode}';
         throw Exception(errorMsg);
       }
@@ -145,6 +155,7 @@ class QuestionService {
     required int lessonId,
   }) async {
     final url = Uri.parse('$baseUrl/api/complete-lesson');
+
     try {
       final response = await http.post(
         url,
@@ -168,10 +179,18 @@ class QuestionService {
 
   Future<List<Map<String, dynamic>>> fetchUserSessions(int userId) async {
     final url = Uri.parse('$baseUrl/api/sessions?user_id=$userId');
+
     try {
-      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      final response = await http.get(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+        final Map<String, dynamic> responseData = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        );
+
         final List<dynamic> sessionsJson = responseData['sessions'] ?? [];
 
         return sessionsJson.map((session) {
@@ -182,7 +201,9 @@ class QuestionService {
             'id': map['id'],
             'subject': map['subject'] ?? map['topic'],
             'progress': _toDouble(map['progress']),
-            'generation_mode': map['generation_mode'] ?? map['generationMode'] ?? QuestionGenerationMode.aiOnly.apiValue,
+            'generation_mode': map['generation_mode'] ??
+                map['generationMode'] ??
+                QuestionGenerationMode.aiOnly.apiValue,
             'difficulty': map['difficulty'] ?? LearningLevel.beginner.apiValue,
             'last_studied_at': map['last_studied_at'] ?? map['updated_at'],
             'created_at': map['created_at'],
@@ -193,6 +214,7 @@ class QuestionService {
     } catch (e) {
       print('세션목록 조회실패: $e');
     }
+
     return [];
   }
 
@@ -202,7 +224,9 @@ class QuestionService {
     required LearningLevel learningLevel,
   }) async {
     if (sessionId <= 0) return;
+
     final url = Uri.parse('$baseUrl/api/sessions/$sessionId/setup');
+
     try {
       final response = await http.patch(
         url,
@@ -216,11 +240,31 @@ class QuestionService {
           'learning_level': learningLevel.apiValue,
         }),
       );
+
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception('학습 설정 저장 실패');
       }
     } catch (e) {
       print('학습 설정 저장 실패: $e');
+    }
+  }
+
+  Future<bool> deleteStudySession({
+    required int userId,
+    required int sessionId,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/sessions/$sessionId?user_id=$userId');
+
+    try {
+      final response = await http.delete(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('학습 세션 삭제 실패: $e');
+      return false;
     }
   }
 
@@ -232,7 +276,9 @@ class QuestionService {
     required bool isCorrect,
   }) async {
     if (sessionId <= 0 || questionId <= 0) return;
+
     final url = Uri.parse('$baseUrl/api/answer-records');
+
     try {
       await http.post(
         url,
@@ -268,6 +314,7 @@ class QuestionService {
     String modelAnswer = '',
   }) async {
     final url = Uri.parse('$baseUrl/api/incorrect-answers');
+
     try {
       await http.post(
         url,
@@ -297,11 +344,20 @@ class QuestionService {
 
   Future<List<Map<String, dynamic>>> fetchIncorrectAnswers(int userId) async {
     final url = Uri.parse('$baseUrl/api/incorrect-answers?user_id=$userId');
+
     try {
-      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      final response = await http.get(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(utf8.decode(response.bodyBytes));
+        final Map<String, dynamic> responseData = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        );
+
         final List<dynamic> answersJson = responseData['answers'] ?? [];
+
         return List<Map<String, dynamic>>.from(
           answersJson.map((item) => Map<String, dynamic>.from(item as Map)),
         );
@@ -309,13 +365,19 @@ class QuestionService {
     } catch (e) {
       print('오답 목록 조회 실패: $e');
     }
+
     return [];
   }
 
   Future<bool> deleteIncorrectAnswer(int answerId) async {
     final url = Uri.parse('$baseUrl/api/incorrect-answers/$answerId');
+
     try {
-      final response = await http.delete(url, headers: {'Accept': 'application/json'});
+      final response = await http.delete(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
       return response.statusCode == 200;
     } catch (e) {
       print('오답 항목 삭제 실패: $e');
@@ -323,16 +385,47 @@ class QuestionService {
     }
   }
 
+  Future<bool> clearIncorrectAnswers({
+    required int userId,
+    int? sessionId,
+  }) async {
+    final query = sessionId != null && sessionId > 0
+        ? '?user_id=$userId&session_id=$sessionId'
+        : '?user_id=$userId';
+
+    final url = Uri.parse('$baseUrl/api/incorrect-answers$query');
+
+    try {
+      final response = await http.delete(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('오답노트 전체 삭제 실패: $e');
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> fetchStudyCalendar(int userId) async {
     final url = Uri.parse('$baseUrl/api/study-calendar?user_id=$userId');
+
     try {
-      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      final response = await http.get(
+        url,
+        headers: {'Accept': 'application/json'},
+      );
+
       if (response.statusCode == 200) {
-        return Map<String, dynamic>.from(jsonDecode(utf8.decode(response.bodyBytes)) as Map);
+        return Map<String, dynamic>.from(
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+        );
       }
     } catch (e) {
       print('학습 캘린더 조회 실패: $e');
     }
+
     return {'records': <Map<String, dynamic>>[], 'streak_days': 0};
   }
 }

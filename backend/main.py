@@ -364,6 +364,38 @@ def is_valid_short_answer_question(q: dict) -> bool:
     banned_phrases = ["설명하시오", "서술하시오", "비교하시오", "분석하시오", "논하시오", "이유를 쓰", "과정을 설명"]
     return not any(phrase in question_text for phrase in banned_phrases)
 
+def contains_korean(text: str) -> bool:
+    return any("\uac00" <= ch <= "\ud7a3" for ch in str(text or ""))
+
+
+def is_korean_generated_question(q: dict) -> bool:
+    """
+    AI가 영어 문제를 내는 경우를 막기 위한 최소 검증입니다.
+    Java, SQL, API 같은 기술 용어는 허용하지만,
+    문제 본문과 해설에는 반드시 한글이 포함되어야 합니다.
+    """
+    question = str(q.get("question", ""))
+    explanation = str(q.get("explanation", ""))
+
+    if not contains_korean(question):
+        return False
+
+    if explanation.strip() and not contains_korean(explanation):
+        return False
+
+    options = q.get("options", [])
+    if isinstance(options, list) and options:
+        joined_options = " ".join(str(option) for option in options)
+        if not contains_korean(joined_options):
+            # 연산자 문제처럼 &&, ||, == 만 있는 선택지는 허용
+            operator_like = all(
+                str(option).strip() in {"&&", "||", "!", "==", "!=", "<", ">", "<=", ">=", "+", "-", "*", "/", "%"}
+                for option in options
+            )
+            if not operator_like:
+                return False
+
+    return True
 
 def normalize_descriptive_question(q: dict) -> dict:
     answer = first_non_empty(
@@ -507,6 +539,11 @@ def build_question_prompt(request: QuestionRequest, source_text: Optional[str], 
     12. 코딩형/SQL 작성형 문제에는 starter_code 또는 test_cases를 가능한 경우 제공합니다.
     13. 고급 수준에서는 단순 암기보다 분석, 적용, 코드 해석, SQL/계산 문제를 우선합니다.
     14. 반드시 JSON object만 반환하세요. JSON 밖에는 아무 문장도 쓰지 마세요.
+    15. 모든 문제(question), 선택지(options), 정답(answer), 허용답안(acceptable_answers), 해설(explanation), 모범답안(model_answer, sample_answer, expected_answer)은 반드시 한국어로 작성하세요.
+    16. 영어 문장으로 된 문제 출제는 금지합니다.
+    17. Java, SQL, Flutter, HTTP, API, CPU, RAM 같은 기술 용어와 코드, 연산자, 명령어는 원문을 유지할 수 있지만 설명 문장은 반드시 한국어여야 합니다.
+    18. question 필드에 한글이 하나도 없으면 잘못된 문제입니다.
+    19. 초급 문제에서는 가능한 한 “아닌 것은?”, “틀린 것은?” 같은 부정형 객관식을 줄이고, 정답이 명확한 개념 확인 문제를 우선 생성하세요.
 
     [반환 JSON 형식]
     {{
@@ -733,6 +770,9 @@ async def generate_questions(request: QuestionRequest):
             else:
                 q["options"] = []
 
+            if not is_korean_generated_question(q):
+                continue
+
             normalized_question = normalize_generated_question(q, q_type, request, source_label)
             normalized_question["id"] = len(final_questions) + 1
             final_questions.append(normalized_question)
@@ -801,6 +841,28 @@ async def delete_incorrect_answer(answer_id: int):
     print(f"🗑️ 오답 복습 완료 처리 (ID: {answer_id})")
     return {"message": "오답 노트에서 복습 완료 처리되었습니다."}
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_study_session(session_id: int, user_id: int):
+    success = database.delete_study_session(user_id, session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="삭제할 학습 세션을 찾을 수 없습니다.")
+
+    print(f"🗑️ 학습 세션 삭제 완료: session_id={session_id}, user_id={user_id}")
+    return {"message": "학습 세션이 삭제되었습니다."}
+
+
+@app.delete("/api/incorrect-answers")
+async def clear_incorrect_answers(user_id: int, session_id: Optional[int] = None):
+    success = database.clear_incorrect_answers(user_id, session_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="오답노트 삭제에 실패했습니다.")
+
+    if session_id:
+        print(f"🧹 특정 학습 오답노트 삭제 완료: user_id={user_id}, session_id={session_id}")
+    else:
+        print(f"🧹 전체 오답노트 삭제 완료: user_id={user_id}")
+
+    return {"message": "오답노트가 삭제되었습니다."}
 
 @app.get("/api/study-calendar")
 async def get_study_calendar(user_id: int):
@@ -909,3 +971,4 @@ async def upload_material(
     except Exception as e:
         print(f"❌ 자료 업로드/분석 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
